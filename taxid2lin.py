@@ -37,21 +37,24 @@ with warnings.catch_warnings():
 
     path_input_annot = args.input_path
     path_input_annot = Path(path_input_annot)
-    if path_input_annot.is_dir():
+    if os.path.isdir(path_input_annot):
         files_input_list = [fn for fn in os.listdir(path_input_annot) if fn.endswith("." + args.input_extension)]
+        print(f"Number of files found: {len(files_input_list)}.")
+    elif os.path.isfile(path_input_annot):
+        files_input_list = [str(path_input_annot)]
     else:
-        files_input_list = path_input_annot
+        print("Input path not found.")
 
     path_output_annot = args.output_dir
 
     path_input_dic = args.db_path
     path_input_dic = Path(path_input_dic)
-
     print("Loading database...")
     dictionary_df = pd.read_csv(path_input_dic)
 
     lineage_columns = list(dictionary_df.columns)[1:8]
 
+    print("Starting annotation.")
     for filename_annotation in files_input_list:
 
         print(Fore.LIGHTYELLOW_EX + f'Processing: {filename_annotation}' + Fore.RESET)
@@ -64,6 +67,10 @@ with warnings.catch_warnings():
         annotation_df[lineage_columns] = np.nan
 
         annotation_df_new = annotation_df.copy(deep=True)
+
+        lineage_columns_idx = [annotation_df_new.columns.get_loc(a) for a in lineage_columns]
+        annotation_df_new[lineage_columns] = annotation_df[lineage_columns].astype('object')
+
         for idx, row in annotation_df.iterrows():
             # print(idx)
             if pd.isnull(row["staxonids"]):
@@ -91,12 +98,18 @@ with warnings.catch_warnings():
                     for index, values in enumerate(names_dic):
                         taxid_dic[index].append(names_dic[index])
 
+                new_taxid_dic = {}
+                for ind, name in enumerate(lineage_columns):
+                    new_taxid_dic[name] = taxid_dic[ind]
+
                 if len(taxid_dic):
-                    annotation_df_new.loc[annotation_df_new.index[idx], lineage_columns] = pd.Series(taxid_dic).values
+                    for name in new_taxid_dic:
+                        annotation_df_new.at[annotation_df_new.index[idx], name] = new_taxid_dic[name]
+
                 else:
                     print(f"ROW {idx}: No lineages found.")
 
-        filename_output = filename_annotation + "_names.csv"
+        filename_output = os.path.basename(os.path.normpath(filename_annotation)) + "_names.csv"
         filename_output = Path(filename_output)
         annotation_df_new.to_csv(path_output_annot/filename_output, index=False)
         print(Fore.CYAN + f"File saved as {filename_output}" + Fore.RESET)
