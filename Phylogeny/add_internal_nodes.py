@@ -15,7 +15,7 @@ def assign_node_ids(node, counter, bootstrap_mapping):
     if node.is_leaf():
         return counter
     else:
-        node.name = "InternalNode" + str(counter)
+        node.name = "InternalNode_" + str(counter)
         counter += 1
         for child in node.children:
             counter = assign_node_ids(child, counter, bootstrap_mapping)
@@ -42,7 +42,7 @@ if args.bootstrap_table:
 
     with open(output_file_table, mode="w", newline="") as file:
         writer = csv.writer(file, delimiter="\t")
-        writer.writerow(["Internal Node ID", "Bootstrap Value"])
+        writer.writerow(["Internal_node_ID", "Bootstrap_value"])
         for node_id, bootstrap_value in bootstrap_mapping.items():
             writer.writerow([node_id, bootstrap_value])
 
