@@ -65,6 +65,8 @@ plot_list = unique(df_pathways_filled$module_category)
 
 for (plot_type in plot_list){
   
+  module_name <- gsub(pattern = " ", replacement = "_", x = plot_type)
+  
   print(paste0("Processing: ", plot_type))
   
   df_sub <- df_pathways_filled %>%
@@ -105,7 +107,7 @@ plot <- ggplot(data = df_sub)+
   
   if (save) {
     ggsave(plot = plot, 
-           filename = paste0(path_output_figures, date, "_", "pathway_", plot_type, ".pdf"), 
+           filename = paste0(path_output_figures, date, "_", "pathway_", module_name, ".pdf"), 
            device = "pdf",
            width = 10,
            dpi = 300)
