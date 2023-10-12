@@ -1,0 +1,81 @@
+---
+title: "stats_plot"
+author: "Theo Krueger"
+date: "2023-05-19"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r, echo = TRUE, message = FALSE, warning = FALSE}
+# core packages
+library(tidyverse)
+library(ggnewscale)
+library(readxl)
+library(forcats)
+
+# logical arguments
+`%notin%` <- Negate(`%in%`)
+
+```
+
+```{r setup paths and logic}
+# logical factors
+save <- FALSE
+
+# paths
+input_path <- "~/Google Drive/My Drive/AG_Worden/BirdBags/YuChens_pipeline/v2_ESOM/stats/"
+file_list <- list.files(input_path)
+  
+output_path <- input_path
+
+```
+
+```{r}
+base_stats <- readxl::read_xlsx(paste0(input_path, "base_stats.xlsx"))
+contig_lengths <- readxl::read_xlsx(paste0(input_path, "contig_lengths.xlsx"), col_names = c("bin", "contig", "length_bp"))
+
+df <- merge(contig_lengths, base_stats, all = TRUE) %>%
+  mutate(N50_contig = case_when(length_bp == N50 ~ "N50",
+                                TRUE ~ "none"),
+         N50_contig = factor(N50_contig, levels = c("none", "N50")))
+```
+
+```{r, fig.height=10, fig.width=7}
+plot <- ggplot(data= df)+
+  geom_col(aes(x=bin, y=length_bp, fill= N50_contig, color = contig), 
+           position = "stack")+
+#  scale_alpha_discrete(guide="none", range = c(0,0.8))+
+  scale_fill_manual(values=c(NA, "#284952"),
+                    guide = guide_legend(title = ""))+
+  scale_color_manual(values = c(rep("black", 54)),
+                     guide = "none")+
+
+  scale_y_continuous(limits = c(0,1000000), breaks = seq(0,1000000, by=100000), expand = c(0,0))+
+  labs(x = "", y = "Genome length [bp]")+
+
+  
+  # new_scale_color()+
+  # geom_line(aes(x=bin,y=0, color='N50', group=1))+
+  # geom_errorbar(data=base_stats, aes(x=bin, ymax=N50, ymin=N50))+
+  # scale_color_manual(values = "black",
+  #                    guide = guide_legend(title = ""))+
+  
+  new_scale_color()+
+  geom_text(aes(x=bin, y=genome_length, label=n_contigs, col="n contigs"), nudge_y = 20000)+
+  scale_color_manual(values = "black",
+                     guide = guide_legend(title = ""))+
+  
+  
+  theme_classic()+
+  theme(axis.text.x = element_text(angle = 90, hjust = 0.95, vjust = 0))
+
+if (save){
+  ggsave(plot, filename = paste0(output_path, "plot_genome_size.pdf"), device = "pdf")
+} else {
+  plot
+}
+```
+

@@ -1,0 +1,395 @@
+---
+title: "Phylogenetic_tree_ESOM"
+author: "Theo Krueger"
+date: "2023-05-14"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+library(deeptime)
+library(tidyverse)
+library(ggtree)
+library(treeio)
+library(ape)
+library(tidytree)
+library(ggnewscale)
+
+rep_until_n <- function(x,n) {
+  full <- floor(n / length(x))
+  more <- n %% length(x)
+  
+  out <- rep(x, times = full)
+
+  if (more > 0){
+    add <- x[1:more]
+    for (i in add){
+      out <- append(out, values = c(i))
+    }
+  }
+  return(out)
+}
+```
+
+```{r}
+save <- FALSE
+
+tree <- "tree12"
+type <- "ML" # bayesian or ML
+
+input_folder <- "/Users/tkrueger/Library/CloudStorage/GoogleDrive-theokrueger.marbio@gmail.com/My Drive/AG_Worden/BirdBags/YuChens_pipeline/v2_ESOM/Phylogeny/"
+
+metadata <- readxl::read_xlsx(paste0(input_folder, tree, "/20230703_NCLDV_polB_metadata_new.xlsx"), 
+                              col_names = TRUE) %>%
+  mutate(label = gsub(pattern = "@", replacement = "-", label),
+         label = gsub(pattern = "-", replacement = "_", label),
+         label = gsub(pattern = ":.*", replacement = "", label),
+         
+         host_lineage = case_when(host_lineage == "Stramenopile" ~ "Stramenopiles",
+                                  host_lineage == "Haptophyte" ~ "Haptophytes",
+                                  host_lineage == "Heterokont" ~ "Heterokonta",
+                                  host_lineage == "Opisthokont" ~ "Opisthokonta",
+                                  is.na(host_lineage) ~ "Unknown",
+                                  TRUE ~ host_lineage
+                                  ),
+         name = case_when(source == "Schulz2020_GVMAG" ~ sub("\\|.*", "", label),
+                          TRUE ~ name
+                          ),
+         name = case_when(source == "Schulz2020_GVMAG" ~ paste0(name, " (", lineage, ")"),
+                          TRUE ~ name
+                          ),
+         label = gsub(pattern = "\\|", replacement = "_", label),
+
+         )
+
+bootstraps <- readxl::read_xls(paste0(input_folder, tree, "/", "polB_add_own_combined_aligned_trimmed_AddIntNodes_bootstraps.xls"))
+bootstraps$BA_prob[bootstraps$Internal_node_ID == "InternalNode_0001"] <- bootstraps$BA_prob[bootstraps$Internal_node_ID== "OROOT"]
+bootstraps <- bootstraps %>%
+  slice(1:(n() - 1)) %>%
+  mutate(BA_prob = case_when(BA_prob == "1" | BA_prob == "-" ~ BA_prob,
+                             TRUE ~ as.character(signif(as.numeric(BA_prob), 2))
+                             ),
+         node_text = paste0(Bootstrap_value, "/", BA_prob),
+         perfect = case_when(Bootstrap_value == 100 & BA_prob == 1 ~ "yes",
+                             TRUE ~ "no")
+         )
+
+if (type == "bayesian"){
+  tree_base <- read.mrbayes(paste0(input_folder, tree, "/polBLGFIG3mln.tre"))
+  tree_base@data$Prob_cat <- case_when(tree_base@data$prob_percent == 100 ~ "100",
+                                        tree_base@data$prob_percent > 95 ~ ">95",
+                                        tree_base@data$prob_percent > 90 ~ ">90")
+  
+
+} else if (type == "ML") {
+  tree_base <- read.newick(paste0(input_folder, tree, "/", "polB_add_own_combined_aligned_trimmed_AddIntNodes.nwk")
+                           )
+  tree_base$node.label[1] <- "InternaNode_0001"
+}
+
+tree_base$tip.label <- gsub("-", "_", tree_base$tip.label)
+tree_base$tip.label <- gsub("\\|", "_", tree_base$tip.label)
+
+
+# tree2@phylo$edge.length <- tree@phylo$edge.length * 0.5
+
+
+date <- format(Sys.Date(), "%Y%m%d")
+output_path_plot <- paste0(input_folder, tree, "/", date, "_polB_", tree)
+```
+
+```{r first look, fig.height=60, fig.width=30}
+
+#pdf(paste0(tree, "nodes.pdf"), height = 60, width = 30)
+
+ggtree(tr = tree_base)+
+  geom_nodelab(aes(label = node))+
+  geom_tiplab()
+
+#dev.off()
+
+```
+
+```{r plot setup}
+label_order <- list()
+style <- list()
+
+style[["strip_fontsize"]] <- unit(12, "points")
+style[["strip_align_family"]] <- TRUE
+style[["strip_textoffset"]] <- 0.055
+style[["strip_offset"]] <- 0.83
+style[["strip_angle"]] <- 90
+style[["strip_linesize"]] <- 2
+style[["strip_hjust"]] <- 0.5
+
+style[["legend_titlesize"]] <- 50
+style[["legend_textsize"]] <- 30
+
+style[["tiplabel_fontsize"]] <- 12
+style[["tiplabel_bold"]] <- data.frame(tree_base$tip.label) %>%
+  rename(full_name = tree_base.tip.label) %>%
+  mutate(bold_tips = case_when(grepl("BB", full_name) ~ "bold",
+                          TRUE ~ "plain")) %>%
+  pull(bold_tips)
+
+style[["nodelabel_fontsize"]] <- 8
+
+style[["scale_textsize"]] <- 12
+
+```
+
+```{r , fig.height=80, fig.width=25}
+if (type == "bayesian"){
+  tree2 <- tree_base %>% root(node = 277, edgelabel = TRUE)
+} else if (type == "ML") { 
+  tree2 <- tree_base %>% root(node = 281, edgelabel = TRUE)
+}
+
+tree_plot <- ggtree(tr = tree2, size = 0.5) %<+%
+  metadata %<+%
+  bootstraps +
+  
+  coord_cartesian(clip = 'off')+
+  xlim(0,5)+
+  
+  geom_nodelab(aes(label = ifelse(perfect == "no", node_text, NA)), 
+               size = unit(style$nodelabel_fontsize, "points"),
+               nudge_x = -0.1, 
+               nudge_y = 0.2)+
+  
+  geom_nodepoint(aes(shape = perfect), size = 4, fill = "black")+
+  scale_shape_manual(values = c("yes" = 21, "no" = NA),
+                        guide = guide_legend(title = ""))+
+
+  geom_tiplab(aes(label = name),
+              size = style$tiplabel_fontsize)+
+  # scale_color_manual(values = c("Opisthokonta" = "#817891",
+  #                               "Amoebozoa" = "#48090B",
+  #                               "Stramenopiles" = "#922D50",
+  #                               "Excavata" = "#e09f3e",
+  #                               "Chlorophyta" = "#9ABCA7",
+  #                               "Haptophytes" = "#284952",
+  #                               "Archaeplastida" = "#a9a9a9",
+  #                               "Heterokonta" = "#EE9480",
+  #                               "Unknown" = "black"
+  #                               ),
+  #                    guide = guide_legend(title = "Host lineage",
+  #                                         title.theme = element_text(size = unit(style$legend_titlesize, "points")),
+  #                                         label.theme = element_text(size = unit(style$legend_textsize, "points"))
+  #                                         )
+  #                    )+
+
+
+  geom_treescale(x = 0.1,
+                 linesize = 3,
+                 fontsize = style$scale_textsize) +
+  
+  theme_tree()+
+  theme(legend.key.size = unit(40, 'points'),
+        legend.position = c(0.8, 0.35),
+        plot.margin = unit(c(5.5,25,5.5,5.5), "points"))
+
+# if (type == "bayesian"){
+#   # tree_plot <- tree_plot +
+#   #     geom_nodepoint(aes(fill=Prob_cat),
+#   #                size = 12, shape = 21)+
+#   #     scale_fill_manual(values = c("100" = "black", ">95" = "darkgrey", ">90" = "white", NA),
+#   #                       guide = guide_legend(title = "Probability",
+#   #                                            title.theme = element_text(size = style$legend_titlesize),
+#   #                                            label.theme = element_text(size = style$legend_textsize)))
+#       # geom_label(aes(x=branch, label=prob_percent))+
+#       # geom_nodelab(aes(label = prob_percent), 
+#       #              nudge_x = -0.1, nudge_y = 0.5, hjust = 0, size = 10)
+#   
+# } else if (type == "ML") {
+#     # tree_plot <- tree_plot +
+#     #   geom_nodepoint(aes(fill=UFBoot_cat),
+#     #              size = 12, shape = 21)+
+#     #   scale_fill_manual(values = c("100" = "black", ">90" = "darkgrey", ">80" = "white", NA),
+#     #                     guide = guide_legend(title = "Probability",
+#     #                                          title.theme = element_text(size = legend_titlesize),
+#     #                                          label.theme = element_text(size = legend_textsize)))
+#       # geom_nodelab(aes(label = UFboot),
+#       #              nudge_x = -0.1, nudge_y = 0.5, hjust = 0, size = 10)
+#   
+# }
+
+label_order[["full_tree"]] <- data.frame(label = tree_plot[["data"]][["label"]][1:201],
+                                         order = tree_plot[["data"]][["y"]][1:201]
+                                         )
+
+
+if (save){
+
+  if (type == "bayesian"){
+    output_path_plot <- paste0(output_path_plot, "_bayesian")
+  } else if (type == "ML") {
+    output_path_plot <- paste0(output_path_plot, "_ML")
+  }
+  
+  pdf(paste0(output_path_plot, ".pdf"), height = 150, width = 60)
+    print(tree_plot)
+  dev.off()
+  
+} else {
+  tree_plot
+}
+```
+
+
+```{r specials, fig.height=100, fig.width=30}
+  
+collapse_df <- data.frame(name = character(0), node = numeric(0), size = numeric(0)) %>%
+  
+  # Phycodnaviridae
+  add_row(name = "Prasinoviruses", node = 287, size = 0.1) %>%
+  add_row(name = "Chloroviruses", node = 332, size = 0.3) %>%
+  add_row(name = "Phaeoviruses", node = 345, size = 0.3) %>%
+  #add_row(name = "Coccolithoviruses", node = 340, size = 0.3) %>%
+  
+  # Iridoviridae
+  add_row(name = "Iridoviridae", node = 357, size = 0.3) %>%
+  
+  # Ascoviridae
+  add_row(name = "Ascoviridae", node = 369, size = 0.3) %>%
+  
+  # Marseilleviridae
+  add_row(name = "Marseilleviridae", node = 350, size = 0.3)
+  
+
+
+tree_plot_collapse <- tree_plot
+for (i in 1:length(collapse_df$node)) {
+  tree_plot_collapse <- tree_plot_collapse %>%
+    scaleClade(node = collapse_df$node[i],
+               scale = collapse_df$size[i],
+               vertical_only = TRUE)
+}
+for (i in 1:length(collapse_df$node)) {
+  tree_plot_collapse <- tree_plot_collapse %>%
+    ggtree::collapse(node = collapse_df$node[i],
+                     mode = "mixed")+
+    geom_cladelab(node = collapse_df$node[i], 
+                  label = collapse_df$name[i],
+                  fontsize = style$strip_fontsize, 
+                  align =  style$strip_align_family)
+}
+
+label_order[["collapsed_tree"]] <- data.frame(label = tree_plot_collapse[["data"]][["label"]][1:201],
+                                              order = round(tree_plot_collapse[["data"]][["y"]][1:201], 0)
+                                              )
+
+if (save) {
+  pdf(paste0(output_path_plot, tree, "_topcollapse.pdf"), height = 70, width = 30)
+  print(tree_plot_collapse)
+  dev.off()
+} else {
+  tree_plot_collapse
+}
+
+```
+
+```{r origin column collapsed, fig.height=100, fig.width=30}
+origin <- list()
+origin[["data"]] <- metadata %>% select(label, isolation_source) %>%
+  right_join(label_order$collapsed_tree, by = "label")
+
+origin[["plot"]] <- ggplot(data = origin$data) +
+  geom_point(aes(x = 1, y = order, color = isolation_source, shape = isolation_source),
+             size = 15)+
+  scale_color_manual("Source",
+                     values = c("Marine pelagic" = "#AE90B6",
+                                "Other aquatic" = "#9CBB89",
+                                "Metazoan" = "#D3876E",
+                                "Marine sediments" = "#e09f3e",
+                                "Terrestrial soil" = "#6C5A49",
+                                "Freshwater" = "#C0C0C0",
+                                "Other terrestrial" = "black"
+                                ),
+                     guide = guide_legend(title.theme = element_text(size = style$legend_titlesize),
+                                          label.theme = element_text(size = style$legend_textsize)
+                                          )
+                     )+
+  scale_shape_manual("Source",
+                       values = c(15,16,17,15,16,17,15)) +
+  theme_classic() +
+  theme(axis.text = element_blank(),
+        axis.title = element_blank(),
+        axis.ticks = element_blank(),
+        axis.line = element_blank()
+        )
+if (save) {
+  ggsave(origin$plot, filename =  paste0(output_path_plot, tree, "_topcollapse_origincol.pdf"), height = 100, width = 30, device = "pdf", dpi = 300, limitsize = FALSE)
+} else {
+  origin$plot
+}
+
+
+```
+
+```{r host column collapsed, fig.height=100, fig.width=30}
+host <- list()
+host[["data"]] <- metadata %>% select(label, host_lineage) %>%
+  right_join(label_order$collapsed_tree, by = "label") %>%
+  mutate(column = 1)
+
+
+host[["plot"]] <- ggplot(data = host$data) +
+  geom_point(aes(x = 1, y = order, color = host_lineage, shape = host_lineage),
+             size = 15)+
+  scale_color_manual(values = c("Opisthokonta" = "#AE90B6",
+                                "Amoebozoa" = "#6C5A49",
+                                "Stramenopiles" = "#922D50",
+                                "Excavata" = "#e09f3e",
+                                "Chlorophyta" = "#9CBB89",
+                                "Haptophytes" = "#284952",
+                                "Archaeplastida" = "#C0C0C0",
+                                "Heterokonta" = "#D3876E",
+                                "Unknown" = "black"
+                                ),
+                     guide = guide_legend(title = "Host lineage",
+                                          title.theme = element_text(size = unit(style$legend_titlesize, "points")),
+                                          label.theme = element_text(size = unit(style$legend_textsize, "points"))
+                                          )
+                     )+
+  scale_shape_manual("Host lineage",
+                       values = rep_until_n(c(15,16,17), n = length(unique(host$data$host_lineage)))
+                     ) +
+  theme_classic() +
+  theme(axis.text = element_blank(),
+        axis.title = element_blank(),
+        axis.ticks = element_blank(),
+        axis.line = element_blank()
+        )
+
+c("Marine pelagic" = "#AE90B6",
+                                "Other aquatic" = "#9CBB89",
+                                "Metazoan" = "#D3876E",
+                                "Marine sediments" = "#e09f3e",
+                                "Terrestrial soil" = "#6C5A49",
+                                "Freshwater" = "#C0C0C0",
+                                "Other terrestrial" = "black"
+                                )
+
+if (save) {
+  ggsave(host$plot, filename =  paste0(output_path_plot, tree, "_topcollapse_hostcol.pdf"), height = 100, width = 30, device = "pdf", dpi = 300, limitsize = FALSE)
+} else {
+  host$plot
+}
+```
+
+```{r combine, fig.height=100, fig.width=100}
+plot_combine <- ggarrange2(tree_plot_collapse, host$plot, origin$plot,
+                           nrow = 1)
+
+if (save) {
+  ggsave(plot_combine, filename =  paste0(output_path_plot, tree, "_combinedplot.pdf"), height = 100, width = 100, device = "pdf", dpi = 300, limitsize = FALSE)
+} else {
+  plot_combine
+}
+
+```
+

@@ -1,0 +1,92 @@
+---
+title: "NCVOG_stats"
+author: "Theo Krueger"
+date: "2023-03-15"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r, echo = TRUE, message = FALSE, warning = FALSE}
+# core packages
+library(tidyverse)
+library(reshape2)
+library(viridis)
+# more packages
+
+#logical arguments
+`%notin%` <- Negate(`%in%`)
+
+# paths 
+base_path_input <- "~/Library/CloudStorage/GoogleDrive-theokrueger.marbio@gmail.com/My Drive/AG_Worden/BirdBags/YuChens_pipeline/"
+version <- "v2"
+
+path_input <- paste0(base_path_input, version, "/")
+
+path_output <- path_input
+path_output_figures <- paste0(path_output, "figures/")
+
+# mode
+save <- FALSE
+```
+
+
+```{r data NCVOG}
+df_NCVOG <- read.table(paste0(path_input, "NCVOG_10core_summary-stats.txt")) %>%
+  rename(method = V1, bin = V2, NCVOG = V3, count = V4)
+bins_after_second_filtering <- scan(paste0(path_input, "bins_remaining_afterfilter_v2.txt"), character(), quote = "")
+df_n_contigs <- read.table(paste0(path_input, "genomes_n_contigs.txt")) %>%
+  rename(bin = V1, n_contigs = V2)
+
+full_data <- left_join(df_NCVOG, df_n_contigs, by = "bin")
+```
+
+```{r calc NCVOG}
+results <- full_data %>%
+  group_by(bin)%>%
+  filter(count != 0)%>%
+  reframe(method, bin, n_contigs, core_NCVOG_present_of10 = n()) %>%
+  group_by(bin)%>%
+  filter(row_number() == 1, bin %in% bins_after_second_filtering)
+```
+
+```{r plot bar}
+plot_bar <- ggplot(data = results)+
+  geom_col(aes(x = bin, y = core_NCVOG_present_of10, fill = n_contigs))+
+  scale_y_continuous(breaks = c(0,2,4,6,8,10))+
+  scale_fill_continuous(type = "viridis")+
+  theme_classic()+
+  theme(axis.text.x = element_text(angle = 90, hjust = 0.95, vjust = 0))
+
+
+if (save){
+    ggsave(plot = plot_bar, filename = paste0(path_output_figures, version, "_core_NCVOG_n_after_second_filter.pdf"), device = "pdf")
+} else{
+  plot_bar
+}
+```
+
+```{r plot xy}
+plot_xy <- ggplot(data = results, aes(x = n_contigs, y = core_NCVOG_present_of10))+
+  geom_point(aes(color = method))+
+  geom_text(aes(label = bin), hjust = 0, size = 2, nudge_x = 0.2)+
+  scale_y_continuous(breaks = c(0,2,4,6,8,10))+
+  theme_classic()+
+  theme(legend.text = element_text(size = 6))
+
+#  plot_comp
+if (save){
+    ggsave(plot = plot_xy, filename = paste0(path_output_figures, version, "_core_NCVOG_n_after_second_filter.pdf"), device = "pdf")
+} else{
+  plot_xy
+}
+```
+
+```{r interesting bins, include=FALSE}
+interesting_bins <- results %>%
+  filter(core_NCVOG_present_of10 > 6, n_contigs < 50)
+interesting_bins
+```
+

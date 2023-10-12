@@ -1,0 +1,46 @@
+---
+title: "Tetranucleotide_frequency"
+author: "Theo Krueger"
+date: "2023-07-19"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+library(tidyverse)
+library(seqinr)
+`%notin%` <- Negate(`%in%`)
+```
+
+```{r }
+folder_fasta <- "/Users/tkrueger/Library/CloudStorage/GoogleDrive-theokrueger.marbio@gmail.com/My Drive/AG_Worden/BirdBags/YuChens_pipeline/v2_ESOM/DNA_seq/"
+bins <- list.files(folder_fasta)
+
+output <- data.frame(matrix(ncol = 1, nrow = 0)) %>%
+  setNames("tetranucleotide") %>%
+  mutate(tetranucleotide = as.character(tetranucleotide))
+
+for (bin in bins){
+    bin_name <- gsub(pattern = "-contigs.fa", replacement = "", bin)
+  
+  seq <- read.fasta(paste0(folder_fasta, bin))[[1]]
+
+  tnr <- data.frame(count(seq, freq = TRUE, wordsize = 4)) %>%
+    rename(tetranucleotide = Var1, !!bin_name := Freq) %>%
+    mutate(tetranucleotide = as.character(tetranucleotide))
+  
+  output <- full_join(output, tnr, by = "tetranucleotide")
+}
+
+rm(tnr, bin, bin_name, seq)
+```
+
+
+```{r write}
+folder_output <- "/Users/tkrueger/Library/CloudStorage/GoogleDrive-theokrueger.marbio@gmail.com/My Drive/AG_Worden/BirdBags/YuChens_pipeline/v2_ESOM/stats/"
+write_csv(output, file = paste0(folder_output, "tetranucleotide_freq_table.csv"), col_names = TRUE)
+```
+

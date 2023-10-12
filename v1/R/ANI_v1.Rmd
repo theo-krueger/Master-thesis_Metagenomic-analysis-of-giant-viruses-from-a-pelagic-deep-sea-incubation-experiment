@@ -1,0 +1,39 @@
+---
+title: "Methods_YuChen_ANI"
+author: "Theo Krueger"
+date: "2023-02-27"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+```
+
+```{r, echo = TRUE, message = FALSE, warning = FALSE}
+# core packages
+library(tidyverse)
+library(reshape2)
+# more packages
+library(readxl)
+library(viridis)
+#logical arguments
+`%notin%` <- Negate(`%in%`)
+```
+
+```{r ANI of all 153, v1}
+ANI <- read.table("~/Library/CloudStorage/GoogleDrive-theokrueger.marbio@gmail.com/My Drive/AG_Worden/BirdBags/Comparison_YuChens_pipeline/Find_NCLDV/fastANI_allVSall_out.txt", header = FALSE)%>%
+  separate(V1, into = c(NA,NA,NA,NA,NA,NA,NA,"V1"), sep = "/")%>%
+  separate(V2, into = c(NA,NA,NA,NA,NA,NA,NA,"V2"), sep = "/")%>%
+  rename(ANI=V3, query_aligned=V4, query_total=V5) %>%
+  mutate(V1 = gsub(".fasta", "", V1),
+         V2 = gsub(".fasta", "", V2))
+
+ANI_overlap <- ANI %>%
+  filter(ANI == 100 & V1 != V2) 
+ANI_replicates <- unique(ANI_overlap$V1)
+
+```
+
+
+

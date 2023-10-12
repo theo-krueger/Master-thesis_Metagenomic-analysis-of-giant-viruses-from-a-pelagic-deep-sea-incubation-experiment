@@ -1,0 +1,82 @@
+---
+title: "NCVOG_table"
+author: "Theo Krueger"
+date: "2023-05-12"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r, echo = TRUE, message = FALSE, warning = FALSE}
+# core packages
+library(tidyverse)
+
+
+# logical arguments
+`%notin%` <- Negate(`%in%`)
+
+```
+
+```{r setup paths and logic}
+# logical factors
+save <- TRUE
+
+# paths
+input_path <- "~/Google Drive/My Drive/AG_Worden/BirdBags/YuChens_pipeline/v2_ESOM/NCVOGs/hmmscan/"
+file_list <- list.files(input_path)
+  
+output_path <- "~/Google Drive/My Drive/AG_Worden/BirdBags/YuChens_pipeline/v2_ESOM/NCVOGs/"
+
+name <- "v2_ESOM"
+
+```
+
+```{r all NCVOG table}
+master <- data.frame(matrix(ncol = 1, nrow = 0))
+colnames(master) <- "NCVOG"
+
+for (file in file_list){
+  
+  bin <- gsub(pattern="-contigs.fa.faa.NCVOG_tblout", replacement = "", x=file)
+  
+  df <- read.table(paste0(input_path, file), skip = 3) %>%
+    select(V1:V10) %>%
+    select(-V2, -V4) %>%
+    setNames(c("NCVOG", "contig", "fullseq_evalue", "fullseq_score", "fullseq_bias", "bestdomain_evalue", "bestdomain_score", "bestdomain_bias")) %>%
+    group_by(contig) %>%
+    arrange(-fullseq_score, .by_group = TRUE) %>%
+    slice_head(n=1) %>%
+    ungroup()
+  
+  out <- df %>%
+    count(NCVOG) %>%
+    rename(!!bin := n)
+  
+  master <- merge(master, out, by = "NCVOG", all = TRUE)
+}
+rm(df, out)
+
+master <- master %>% mutate_all(list(~ifelse(is.na(.), 0, .)))
+
+if (save){
+  write_csv(x=master, file = paste0(output_path, "NCVOG_table_per_bin_full_", name, ".csv"))
+}
+```
+
+```{r NCVOG20}
+NCVOG20 <- c("NCVOG0004" , "NCVOG0022" , "NCVOG0023" , "NCVOG0035" , "NCVOG0036" , "NCVOG0038" , "NCVOG0052" , "NCVOG0059" , "NCVOG0076" , "NCVOG0211" , "NCVOG0249" , "NCVOG0256" , "NCVOG0262" , "NCVOG1060" , "NCVOG1088" , "NCVOG1115" , "NCVOG1117" , "NCVOG1122" , "NCVOG1127" , "NCVOG1192")
+
+table_NCVOG20 <- master[-1] %>% 
+  t() %>%
+  as.data.frame() %>% 
+  setNames(master[,1]) %>%
+  rownames_to_column("bins") %>%
+  select(bins, any_of(NCVOG20))
+
+if (save){
+  write_csv(x=table_NCVOG20, file = paste0(output_path,"NCVOG20_table_selected_", name, ".csv"))
+}
+```
+

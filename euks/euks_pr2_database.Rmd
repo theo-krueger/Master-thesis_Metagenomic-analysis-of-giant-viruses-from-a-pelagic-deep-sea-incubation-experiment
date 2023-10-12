@@ -1,0 +1,86 @@
+---
+title: "annotate_euks_pr2"
+author: "Theo Krueger"
+date: "2023-06-19"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r, echo = TRUE, message = FALSE, warning = FALSE}
+# core packages
+library(tidyverse)
+library(Biostrings)
+library(pr2database)
+
+# logical arguments
+`%notin%` <- Negate(`%in%`)
+
+```
+
+```{r setup paths and logic}
+# logical factors
+
+# paths
+output_path <- "/Users/tkrueger/Library/CloudStorage/GoogleDrive-theokrueger.marbio@gmail.com/My Drive/AG_Worden/BirdBags/YuChens_pipeline/v2_ESOM/abundance/Euk_data/"
+```
+
+```{r}
+pr2 <- pr2_database()
+
+seq_all <- Biostrings::DNAStringSet(pr2$sequence)
+names(seq_all) <- paste(pr2$genbank_accession, 
+                        "domain", pr2$domain,
+                        "supergroup", pr2$supergroup,
+                        "division", pr2$division,
+                        "subdivision", pr2$subdivision,
+                        "class", pr2$class,
+                        "order", pr2$order,
+                        "family", pr2$family,
+                        "genus", pr2$genus,
+                        "species", pr2$species,
+                        sep = "|")
+Biostrings::writeXStringSet(seq_all, paste0(output_path, "pr2_database.fasta"), width = 80)
+
+```
+
+saving fasta file to server, run blast against it -> euk_rRNA.sh
+then downloading results for anlysis in following block
+
+```{r}
+annot <- read_tsv(paste0(output_path, "summary_rRNA.fasta.vs.pr2.tbl"),col_names = FALSE)%>%
+  setNames(c("qseqid", "sseqid", "pident", "length", 
+             "mismatch", "gapopen", "qstart", "qend", 
+             "sstart", "send", "evalue", "bitscore")
+           ) %>%
+  separate(qseqid, into = c("sample", "seq_id"), sep = " ")%>%
+  separate(sseqid, 
+           into = c(NA, 
+                    NA, "domain", 
+                    NA, "supergroup", 
+                    NA, "division",
+                    NA, "subdivision", 
+                    NA, "class", 
+                    NA, "order", 
+                    NA, "family", 
+                    NA, "genus", 
+                    NA, "species"), 
+           sep = "\\|")%>%
+  filter(bitscore > 200)%>%
+  mutate(seq_id = gsub("^([^_]*_[^_]*)_.*$", "\\1", seq_id),
+         sample = gsub("_rRNA", "", sample))
+
+abundance <- read_table(paste0(output_path, "summary_rRNA_coverage.tbl"), col_names = FALSE)%>%
+  setNames(c("sample","sequence", "coverage"))
+
+joined <- left_join(x=annot, y=abundance, by=c("seq_id"="sequence", "sample"="sample"))
+
+joined_euk <- joined %>%
+  filter(grepl("Eukaryot", domain))
+  
+
+write_delim(joined_euk, file = paste0(output_path, "BB_Euk_taxa_pr2_abundance.tsv"), delim = "\t")
+```
+

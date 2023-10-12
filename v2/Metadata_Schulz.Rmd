@@ -1,0 +1,49 @@
+---
+title: "Schulz2020_metadata"
+author: "Theo Krueger"
+date: "2023-08-17"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+library(tidyverse)
+```
+
+```{r data}
+save <- FALSE
+
+tree_metadata <- readxl::read_xlsx("/Users/tkrueger/Library/CloudStorage/GoogleDrive-theokrueger.marbio@gmail.com/My Drive/AG_Worden/BirdBags/YuChens_pipeline/v2_ESOM/Phylogeny/tree12/20230703_NCLDV_polB_metadata_new.xlsx")
+
+Schulz_full_metadata <-  readxl::read_xlsx("/Users/tkrueger/Library/CloudStorage/GoogleDrive-theokrueger.marbio@gmail.com/My Drive/AG_Worden/BirdBags/YuChens_pipeline/Comparison_Schulz2020/41586_2020_1957_MOESM4_ESM.xlsx")
+
+IMG_metadata <- read.csv(file = "/Users/tkrueger/Library/CloudStorage/GoogleDrive-theokrueger.marbio@gmail.com/My Drive/AG_Worden/BirdBags/YuChens_pipeline/Comparison_Schulz2020/imgm_August16_2023.txt", sep = "\t")
+```
+
+```{r}
+Schulz_data <- list()
+Schulz_data[["all_taxon_IDs"]] <- Schulz_full_metadata %>%
+  pull("IMG Taxon ID") %>%
+  na.exclude() %>%
+  unique()
+Schulz_data[["no_taxon_IDs"]] <- Schulz_full_metadata %>%
+  filter(is.na(`IMG Taxon ID`))
+
+Schulz_data[["tree_taxon_IDs"]] <- tree_metadata %>%
+  filter(source == "Schulz2020_GVMAG") %>%
+  pull("IMG Taxon ID") %>%
+  unique()
+Schulz_data["taxon_ID_not_in_IMG_metadata"] <- Schulz_data$all_taxon_IDs %>%
+  setdiff(IMG_metadata$taxon_oid)
+
+
+full_tree_meta <- IMG_metadata %>%
+  filter(taxon_oid %in% Schulz_data$tree_taxon_IDs)
+full_Schulz_meta <- IMG_metadata %>%
+  filter(taxon_oid %in% Schulz_data$all_taxon_IDs)
+write_csv(full_Schulz_meta, file = "/Users/tkrueger/Library/CloudStorage/GoogleDrive-theokrueger.marbio@gmail.com/My Drive/AG_Worden/BirdBags/YuChens_pipeline/Comparison_Schulz2020/Schulz_all_samples_IMG_metadata.csv")
+```
+

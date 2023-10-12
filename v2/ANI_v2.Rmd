@@ -1,0 +1,132 @@
+---
+title: "Methods_YuChen_ANI"
+author: "Theo Krueger"
+date: "2023-02-27"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+```
+
+```{r, echo = TRUE, message = FALSE, warning = FALSE}
+# core packages
+library(tidyverse)
+library(reshape2)
+# more packages
+library(readxl)
+library(viridis)
+#logical arguments
+`%notin%` <- Negate(`%in%`)
+
+# paths 
+base_path_input <- "~/Google Drive/My Drive/AG_Worden/BirdBags/YuChens_pipeline/"
+version <- "v2"
+all_vs_all <- TRUE
+
+path_input <- paste0(base_path_input, version, "/")
+
+path_output <- path_input
+path_output_figures <- paste0(path_output, "figures/")
+
+# mode
+save <- FALSE
+```
+
+```{r ANI of all 76 refined, v2}
+ANI <- read.table(paste0(path_input, "fastANI_allVSall_out_v2.txt"), header = FALSE)%>%
+  separate(V1, into = c(NA,NA,NA,"V1"), sep = "/") %>%
+  separate(V2, into = c(NA,NA,NA,"V2"), sep = "/") %>%
+  rename(ANI=V3, query_aligned=V4, query_total=V5) %>%
+  mutate(V1 = gsub("-contigs.fa", "", V1),
+         V2 = gsub("-contigs.fa", "", V2))
+```
+
+```{r plotting}
+ANIplot <- ggplot(data = ANI)+
+  geom_tile(aes(x= V1, y= V2, fill = ANI), color = 'white')+
+  scale_fill_viridis(discrete = FALSE)+
+  theme_classic()+
+  theme(axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0.2))
+
+if (save){
+  ggsave(plot = ANIplot, filename = paste0(path_output_figures, "_ANI_allvsall.pdf"), device = "pdf")
+} else {
+  ANIplot
+}
+```
+
+```{r filter out replication problems: only taking higher query length values, results='hide', echo=FALSE}
+if (all_vs_all == TRUE){
+  ANI_clean <- ANI %>%
+    filter(V1 != V2)
+  
+  ANI_clean_derep <- data.frame(matrix(ncol = 5, nrow = 0))
+  names(ANI_clean_derep) <- names(ANI_clean)
+  appended <- c()
+  
+  for (line in 1:nrow(ANI_clean)) {
+    duplication <- FALSE
+    print(paste0("Proccessing row: ", line))
+  
+    name1 <- ANI_clean[line,1]
+    name2 <- ANI_clean[line,2]
+    
+    query_length1 <- ANI_clean[line,5]
+    
+    rows_to_check_a <- which(ANI_clean$V1 == name2)
+    rows_to_check_b <- which(ANI_clean$V2 == name1)
+    row_to_check <- intersect(rows_to_check_a, rows_to_check_b)
+    
+    if (length(row_to_check) != 0 | is.null(row_to_check)) {
+      duplication <- TRUE  
+      print(paste0("Matching row: ", row_to_check))
+      
+      query_length2 <- ANI_clean[row_to_check,5]
+    }
+    
+    if (duplication == TRUE) {
+      rows_to_check_a_2 <- which(ANI_clean_derep$V1 == name1 | ANI_clean_derep$V1 == name2)
+      rows_to_check_b_2 <- which(ANI_clean_derep$V2 == name1 | ANI_clean_derep$V2 == name2)
+      row_to_check_2 <- intersect(rows_to_check_a_2, rows_to_check_b_2)
+      
+      if (length(row_to_check_2) == 0 & !is.null(row_to_check_2)) {
+        
+        if (query_length1 >= query_length2) {
+          
+          ANI_clean_derep <- rbind(ANI_clean_derep, ANI_clean[line,])
+          print(paste0("Chose line: ", line))
+          
+        } else if (query_length1 < query_length2) {
+          
+          ANI_clean_derep <- rbind(ANI_clean_derep, ANI_clean[row_to_check,])
+          print(paste0("Chose line: ", row_to_check))
+          
+        } 
+      }  
+    } else {
+        ANI_clean_derep <- rbind(ANI_clean_derep, ANI_clean[line,])
+        print("No duplicate")
+    }
+  }
+  # still has a problem with grouping and subgroups
+  grouping <- ANI_clean_derep %>%
+    filter(ANI > 99.9) %>%
+    mutate(target = V2, add = V1) %>%
+    group_by(target) %>%
+    arrange(add) %>%
+    reframe(group = paste(add, collapse = ","), size = length(add)) %>%
+    distinct(group)
+
+} else {
+  grouping <- ANI %>%
+  filter(ANI > 99.9) %>%
+  mutate(target = V2, add = V1) %>%
+  group_by(target) %>%
+  arrange(add) %>%
+  reframe(group = paste(add, collapse = ","), size = length(add)) %>%
+  distinct(group)
+}
+```
+

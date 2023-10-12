@@ -1,0 +1,521 @@
+---
+title: "Abundance_heatmap"
+author: "Theo Krueger"
+date: "2023-05-23"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r, echo = TRUE, message = FALSE, warning = FALSE}
+# core packages
+library(tidyverse)
+library(reshape2)
+library(readxl)
+library(ggdendro)
+library(ggh4x)
+library(deeptime)
+library(ggdendroplot)
+library(viridis)
+
+# logical arguments
+`%notin%` <- Negate(`%in%`)
+
+```
+
+```{r setup paths and logic}
+# logical factors
+save <- FALSE
+
+# paths
+input_path <- "/Users/tkrueger/Library/CloudStorage/GoogleDrive-theokrueger.marbio@gmail.com/My Drive/AG_Worden/BirdBags/YuChens_pipeline/v2_ESOM/abundance/"
+input_file <- "abundances_5bins_ESOM.txt"
+
+output_path <- input_path
+
+```
+
+
+```{r MAG abundance, fig.width=6, fig.height=2}
+df_vir <- read.table(paste0(input_path, input_file), header = TRUE) %>%
+  melt() %>%
+  rename(sample = variable, read_abundance = value, group = bin) %>%
+  separate(sample, into = c("year", "depth", "method", "time", "sample", NA, NA), sep = "_") %>%
+  mutate(time = case_when(grepl("8", time) ~ "T0",
+                          time == "4d" ~ "T4d",
+                          time == "4m" ~ "T4m",
+                          TRUE ~ as.character(time)),
+         sample = case_when((sample == "8" & depth == "1018m") ~ "8a",
+                            (sample == "8" & depth == "1040m") ~ "8b",
+                            TRUE ~ sample),
+         sample = factor(sample, levels = c("5","8a","8b","13","14","15","19","20","21")),
+         data = "NCLDV",
+         group = case_when(grepl("4_1", group) ~ "BB_4_1",
+                           grepl("4_2", group) ~ "BB_4_2",
+                           grepl("4_3", group) ~ "BB_4_3",
+                           grepl("11_1", group) ~ "BB_11_1",
+                           grepl("11_2", group) ~ "BB_11_2"))
+
+# plot
+
+vir_rel_coverage <- ggplot(data = df_vir)+
+  geom_tile(aes(x=sample, y=group, fill = read_abundance))+
+  scale_x_discrete()+
+  scale_y_discrete(position = "left")+
+  scale_fill_viridis(option = "magma", limits=c(0,125), direction = -1)+
+  labs(x = "Sample number", y = "MAGs\n", fill = "Read coverage")+
+  theme_classic()+
+  theme(plot.margin = unit(c(5.5,20,5.5,5.5), "points"),
+        axis.title.x = element_blank(),
+        axis.text.y = element_text(size = unit(18, "points")),
+        axis.title.y = element_text(size = unit(18, "points"), 
+                                    face = "bold"),
+        legend.text = element_text(size = unit(16, "points"),
+                                   angle = 0,
+                                   hjust = 0,
+                                   vjust = 0.5),
+        legend.title = element_text(size = unit(18, "points"), vjust = 1))
+
+if (save) {
+  ggsave(vir_rel_coverage, filename = paste0(output_path, "heatmap_vir.pdf"), 
+         device = "pdf", dpi = 300, height = 2, width = 7)
+} else {
+  vir_rel_coverage
+}
+```
+
+```{r euk phyloflash, fig.height=10, fig.width=25}
+df_euk_tot_ab <- read_xlsx(paste0(input_path, "Euk_data/phyloFlash/BB_Euk_taxa.xlsx"), skip = 2) %>%
+  melt() %>%
+  rename(sample = variable, read_count = value, group = taxonomy) %>%
+  separate(sample, into = c("year", "depth", "method", "time", "sample", NA), sep = "_") %>%
+  mutate(time = case_when(grepl("8", time) ~ "T0",
+                        time == "4d" ~ "T4d",
+                        time == "4m" ~ "T4m",
+                        TRUE ~ as.character(time)),
+         sample = case_when((sample == "8" & depth == "1018m") ~ "8a",
+                            (sample == "8" & depth == "1040m") ~ "8b",
+                            TRUE ~ sample),
+         sample = factor(sample, levels = c("5","8a","8b","13","14","15","19","20","21")),
+         data = "Eukaryotes",
+         group = gsub(";", " ", group))
+
+
+df_euk_rel_ab <- df_euk_tot_ab %>%
+  group_by(sample) %>%
+  reframe(group, year, depth, method, time, sample, read_abundance = read_count / sum(read_count), data)
+
+
+df_euk_rel_ab_heat <- df_euk_rel_ab %>%
+  select(sample, group, read_abundance) %>% 
+  mutate(group = gsub(";", " ", group)) %>%
+  pivot_wider(names_from = group, values_from = read_abundance)
+
+df_euk_rel_ab_heat_scale <- df_euk_rel_ab_heat
+df_euk_rel_ab_heat_scale[,c(2:16)] <- scale(df_euk_rel_ab_heat_scale[,c(2:16)])
+df_euk_rel_ab_heat_scale_mat <- t(as.matrix(df_euk_rel_ab_heat_scale))
+colnames(df_euk_rel_ab_heat_scale_mat) <- df_euk_rel_ab_heat_scale_mat[1,]
+df_euk_rel_ab_heat_scale_mat <- df_euk_rel_ab_heat_scale_mat[-1,]
+dendro <- as.dendrogram(hclust(d = dist(x = df_euk_rel_ab_heat_scale_mat)))
+dendro.order <- order.dendrogram(dendro)
+dendro.groupnames <- colnames(df_euk_rel_ab_heat_scale)
+dendro.groupnames <- dendro.groupnames[-1]
+df_dendro_plot <- dendro_data(dendro)
+
+df_euk_rel_ab_heat_tile <- df_euk_rel_ab_heat_scale %>%
+  pivot_longer(cols = -c(sample),
+               names_to = "group",
+               values_to = "z-score") %>%
+  mutate(sample = factor(sample, levels = c("5","8a","8b","13","14","15","19","20","21")))
+df_euk_rel_ab_heat_tile$group <- factor(x = df_euk_rel_ab_heat_tile$group,
+                                             levels = dendro.groupnames[dendro.order],
+                                             ordered = TRUE)
+
+
+df_euk_rel_ab_heat_tile$group <- factor(x = df_euk_rel_ab_heat_tile$group,
+                                             levels = dendro.groupnames[dendro.order],
+                                             ordered = TRUE)
+# plot
+
+euk_rel_ab1 <- ggplot(data = df_euk_rel_ab_heat_tile)+
+  geom_tile(aes(x=sample, y=group, fill = `z-score`))+
+  scale_x_discrete()+
+  labs(x = "Sample number", y = "Taxonomic group", fill = "z-score")+
+  theme_classic()+
+  theme()
+euk_rel_ab2 <- ggplot(data = df_euk_rel_ab)+
+  geom_tile(aes(x=sample, y=group, fill = read_abundance))+
+  scale_x_discrete()+
+  labs(x = "Sample number", y = "Taxonomic group", fill = "Relative read abundance")+
+  theme_classic()+
+  theme()
+
+if (save) {
+  ggsave(euk_real_ab, filename = paste0(output_path, "euk_rel_ab.pdf"), 
+         device = "pdf", dpi = 300, height = 8, width = 8)
+  
+  write_csv(df_euk_rel_ab, file = paste0(output_path, "euk_rel_ab.csv"))
+} else {
+  ggarrange2(euk_rel_ab1, euk_rel_ab2,
+            ncol = 2)
+}
+```
+
+```{r euk phyloflash high abundance, fig.height=12, fig.width=16}
+
+list_euk_rel_ab_high_bins <- df_euk_rel_ab %>%
+  group_by(sample) %>%
+  top_n(n=5, wt = read_abundance) %>%
+  ungroup() %>%
+  select(group) %>%
+  distinct() %>%
+  pull()
+df_euk_rel_ab_high <- df_euk_rel_ab %>%
+  filter(group %in% list_euk_rel_ab_high_bins) %>%
+  mutate(supergroup = case_when(grepl("Amorphea", group) ~ "Amorphea",
+                                grepl("SAR", group) ~ "SAR",
+                                grepl("Telonema", group) ~ "SAR",
+                                grepl("Discoba", group) ~ "Discoba"),
+         group = gsub("Eukaryota ", "", group),
+         group = gsub("SAR ", "", group),
+         group = gsub("Discoba ", "", group),
+         group = gsub("Amorphea ", "", group)) %>%
+  mutate(group = case_when(group == "(Amorphea) (Amorphea)" ~ "Unclassified Amorphea",
+                           group == "(Eukaryota) (Eukaryota) (Eukaryota)" ~ "Unclassified Eukaryotes",
+                           group == "(SAR) (SAR)" ~ "Unclassified SAR",
+                           TRUE ~ group))
+
+
+df_euk_rel_ab_high_heat <- df_euk_rel_ab_high %>%
+  select(sample, group, read_abundance) %>% 
+  pivot_wider(names_from = group, values_from = read_abundance)
+
+df_euk_rel_ab_high_heat_scale <- df_euk_rel_ab_high_heat
+df_euk_rel_ab_high_heat_scale[,c(2:16)] <- scale(df_euk_rel_ab_high_heat_scale[,c(2:16)])
+df_euk_rel_ab_high_heat_scale_mat <- t(as.matrix(df_euk_rel_ab_high_heat_scale))
+colnames(df_euk_rel_ab_high_heat_scale_mat) <- df_euk_rel_ab_high_heat_scale_mat[1,]
+df_euk_rel_ab_high_heat_scale_mat <- df_euk_rel_ab_high_heat_scale_mat[-1,]
+dendro_high <- as.dendrogram(hclust(d = dist(x = df_euk_rel_ab_high_heat_scale_mat)))
+dendro_high.order <- order.dendrogram(dendro_high)
+dendro_high.groupnames <- colnames(df_euk_rel_ab_high_heat_scale)
+dendro_high.groupnames <- dendro_high.groupnames[-1]
+df_dendro_plot_high <- dendro_data(dendro_high)
+
+df_euk_rel_ab_high_heat_tile <- df_euk_rel_ab_high_heat_scale %>%
+  pivot_longer(cols = -c(sample),
+               names_to = "group",
+               values_to = "z-score") %>%
+  mutate(sample = factor(sample, levels = c("5","8a","8b","13","14","15","19","20","21")))
+df_euk_rel_ab_high_heat_tile <- df_euk_rel_ab_high_heat_tile %>%
+  mutate(group = factor(x = group,
+                        levels = group[dendro_high.order],
+                        ordered = TRUE),
+         time = case_when(sample %in% c("5","8a","8b") ~ "T0",
+                          sample %in% c("13","14","15") ~ "T4d",
+                          sample %in% c("19","20","21") ~ "T4m"),
+         label = paste0(sample, "&", time),
+         label = factor(label, levels = c("5&T0","8a&T0","8b&T0","13&T4d","14&T4d","15&T4d","19&T4m","20&T4m","21&T4m")))
+
+# only rel abundance, not score
+df_euk_rel_ab_high_heat_tile2 <- df_euk_rel_ab_high %>%
+  mutate(group = gsub(";", " ", group),
+         group = case_when(group == "Alveolata (Alveolata)" ~ "Unclassified Alveolata",
+                           group == "Incertae Sedis Telonema (Telonema)" ~ "Telonema Incertae Sedis",
+                           TRUE ~ group),
+         group = factor(x = group,
+                        levels = group[dendro_high.order],
+                        ordered = TRUE),
+         time = case_when(sample %in% c("5","8a","8b") ~ "T0",
+                          sample %in% c("13","14","15") ~ "T4d",
+                          sample %in% c("19","20","21") ~ "T4m"),
+         label = paste0(sample, "&", time),
+         label = factor(label, levels = c("5&T0","8a&T0","8b&T0","13&T4d","14&T4d","15&T4d","19&T4m","20&T4m","21&T4m"))
+         )
+
+
+
+# plot
+
+# rel ab change as score
+euk_real_ab_high_tile <- ggplot(data = df_euk_rel_ab_high_heat_tile)+
+  geom_tile(aes(x=sample, y=group, fill = `z-score`))+
+  scale_x_discrete()+
+  scale_y_discrete(position = "right")+
+  labs(x = "Sample number", y = "Taxonomic group\n", fill = "Relative abundance change")+
+  theme_classic() +
+  theme(plot.margin = unit(c(5.5,5.5,5.5,3), "points"),
+        axis.text = element_text(size = unit(16, "points")),
+        axis.text.y = element_text(hjust = 1),
+        axis.title = element_text(size = unit(18, "points")),
+        legend.text = element_text(size = unit(16, "points")),
+        legend.title = element_text(size = unit(18, "points")))+
+  guides(x = guide_axis_nested(delim = "&"))
+
+# only rel abundance, not score
+colors_heat <- rev(c(rep("#284952", 4), "#e09f3e", rep("#284952", 3), rep("#938BA1", 3), "black", rep("#284952", 3)))
+
+euk_real_ab_high_tile2 <- ggplot(data = df_euk_rel_ab_high_heat_tile2)+
+  geom_tile(aes(x=sample, y=group, fill = read_abundance))+
+  scale_x_discrete()+
+  scale_y_discrete(position = "right")+
+  scale_fill_viridis(option = "magma", limits=c(0,0.5), direction = -1)+
+  labs(x = "", y = "Taxonomic group\n", fill = "Relative read abundance")+
+  theme_classic() +
+  theme(plot.margin = unit(c(5.5,20,5.5,3), "points"),
+        axis.text.x = element_text(size = unit(16, "points")),
+        axis.text.y = element_text(hjust = 1, colour = c(colors_heat),
+                                   size = unit(18, "points")),
+        axis.title = element_text(size = unit(18, "points"),
+                                  face = "bold"),
+        legend.text = element_text(size = unit(16, "points"), 
+                                   angle = 0,
+                                   hjust = 0,
+                                   vjust = 0.5),
+        legend.title = element_text(size = unit(18, "points"), vjust = 1))
+  #guides(x = guide_axis_nested(delim = "&"))
+
+
+euk_real_ab_high_dendro <- ggplot(segment(df_dendro_plot_high))+
+  geom_segment(aes(x=x, y=y, xend=xend, yend=yend), size = 1.5) + 
+  # geom_text(data = df_dendro_plot$labels,
+  #           aes(x = x, y = y, label = label), size = 3, vjust = 0)+
+  coord_flip()+
+  scale_y_reverse()+
+  theme_dendro()+ 
+  theme(plot.margin = unit(c(5.5,0,25,5.5), "points"))
+
+# dendro_plot <- ggdendrogram(data = dendro, 
+#                             rotate = TRUE,
+#                             labels = FALSE)
+
+if (save) {
+  ggsave(euk_real_ab_high_tile2, filename = paste0(output_path, "euk_rel_ab_high_top5.pdf"), 
+         device = "pdf", dpi = 300, height = 4, width = 8)
+  ggsave(euk_real_ab_high_tile, filename = paste0(output_path, "euk_rel_ab_change_high_top5.pdf"), 
+         device = "pdf", dpi = 300, height = 4, width = 8)
+  
+  write_csv(df_euk_rel_ab_high, file = paste0(output_path, "euk_rel_ab_high_top5.csv"))
+  write_lines(list_euk_rel_ab_high_bins, file = paste0(output_path, "euk_rel_ab_high_top5.txt"))
+} else {
+  gg_euk <- ggarrange2(euk_real_ab_high_dendro, euk_real_ab_high_tile, 
+             widths = c(0.05, 1),
+             ncol = 2, nrow = 1)
+  gg_euk2 <- ggarrange2(euk_real_ab_high_dendro, euk_real_ab_high_tile2, 
+             widths = c(0.05, 1),
+             ncol = 2, nrow = 1)
+  euk_real_ab_high_tile2
+  # grid.newpage()
+  # print(dendro_plot, vp = viewport(x = 0.9, y = 0.41, width = 0.2, height = 0.82))
+  # print(euk_real_ab, vp = viewport(x = 0.4, y = 0.5, width = 0.8, height = 1))
+}
+```
+```{r merged plot vir + euk phyloflash, fig.height=16, fig.width=16}
+gg_all <- ggarrange2(vir_rel_coverage, euk_real_ab_high_dendro, euk_real_ab_high_tile2,
+           layout = matrix(c(0,1,2,3), nrow = 2, byrow = TRUE),
+           widths = c(1,20), heights = c(2,6)
+           )
+if (save) {
+  ggsave(gg_all, filename = paste0(output_path, "heatmap_vir_euk_top5.pdf"), 
+         dpi = 300, device = "pdf",
+         height = 18, width = 16)
+} else {
+  gg_all
+}
+```
+
+```{r euk phyloflash + pr2, fig.height=12, fig.width=10}
+df_euk_ab <- read_tsv(paste0(input_path, "Euk_data/phyloFlash/BB_Euk_taxa_pr2_abundance.tsv")) %>%
+  separate(sample, into = c("year", "depth", "method", "time", "sample", NA), sep = "_") %>%
+  mutate(time = case_when(grepl("8", time) ~ "T0",
+                        time == "4d" ~ "T4d",
+                        time == "4m" ~ "T4m",
+                        TRUE ~ as.character(time)),
+         sample = case_when((sample == "8" & depth == "1018m") ~ "8a",
+                            (sample == "8" & depth == "1040m") ~ "8b",
+                            TRUE ~ sample),
+         sample = factor(sample, levels = c("5","8a","8b","13","14","15","19","20","21"))
+         ) %>%
+  filter(!str_detect(species, ":plas"))
+
+df_euk_taxa_lookup <- df_euk_ab %>%
+  select(domain, supergroup, division, subdivision, class, order, family, genus, species) %>%
+  distinct()
+  
+df_euk_ab_full <- df_euk_ab %>%
+  select(time, year, depth, method, sample, seq_id, species, coverage)%>%
+  complete(sample, species) %>%
+  left_join(df_euk_taxa_lookup, by="species")%>%
+  mutate(coverage = case_when(is.na(coverage) ~ 0,
+                              TRUE ~ coverage)
+         ) %>%
+  distinct()
+
+df_euk_ab_full_excChaet <- df_euk_ab_full %>%
+  filter(family != "Mamiellaceae", !grepl("Chaetoc", species))
+
+
+############## dendrogram
+df_euk_ab_full_excChaet_wide <- df_euk_ab_full_excChaet %>%
+  select(sample, species, coverage) %>%
+  pivot_wider(names_from = sample, values_from = coverage) %>%
+  column_to_rownames(var = "species") %>%
+  data.matrix()
+
+dendro.colclus = hclust(dist(t(df_euk_ab_full_excChaet_wide)))
+dendro.rowclus = hclust(dist(df_euk_ab_full_excChaet_wide))
+
+df_euk_ab_full_excChaet_long <- hmReady(df_euk_ab_full_excChaet_wide, colclus = dendro.colclus, rowclus = dendro.rowclus) %>%
+  mutate(x = case_when(variable == "5" ~ 1,
+                       variable == "8a" ~ 2,
+                       variable == "8b" ~ 3,
+                       variable == "13" ~ 4,
+                       variable == "14" ~ 5,
+                       variable == "15" ~ 6,
+                       variable == "19" ~ 7,
+                       variable == "20" ~ 8,
+                       variable == "21" ~ 9))
+
+
+
+######## plot
+
+euk_ab_tile <- ggplot()+
+  geom_tile(data = df_euk_ab_full_excChaet_long, aes(x=variable, y=y, fill = value))+
+  geom_dendro(dendro.rowclus, pointing = "side", xlim = c(10, 12))+
+
+  scale_fill_viridis(option = "magma", limits=c(0,15), direction = -1)+
+
+  labs(x = "", y = "Taxonomic group\n", fill = "Read coverage")+
+  theme_classic() +
+  theme(plot.margin = unit(c(5.5,20,5.5,3), "points"),
+        axis.text.y = element_text(hjust = 1,
+                                   size = unit(18, "points")),
+        axis.title = element_text(size = unit(18, "points"),
+                                  face = "bold"),
+        legend.text = element_text(size = unit(16, "points"), 
+                                   angle = 0,
+                                   hjust = 0,
+                                   vjust = 0.5),
+        legend.title = element_text(size = unit(18, "points"), vjust = 1))
+
+# gplots try
+# euk_ab_tile2 <- heatmap.2(df_euk_ab_full_excChaet_wide,
+#                           dendrogram = "row")
+
+if (save) {
+  ggsave(euk_ab_tile, 
+         filename = paste0(output_path, "heatmap_euk_pr2_exChaet_species.pdf"),
+         device = "pdf", dpi = 300,
+         height = 12, width = 14)
+} else {
+  euk_ab_tile
+}
+
+```
+
+```{r euk checkm ssu + pr2, fig.width=12, fig.height=10}
+df_euk_ab_2 <- read_tsv(paste0(input_path, "Euk_data/checkm_ssu/classify_euk/PR2_table/blast6.tsv"), col_names = FALSE) %>%
+  rename(qseqid=X1, sseqid=X2, pident=X3) %>%
+  separate(qseqid, into = c(NA, "year", "depth", "method", "time", "sample", NA, NA, "contig"), sep = "_", remove = FALSE) %>%
+  mutate(time = case_when(grepl("8", time) ~ "T0",
+                        time == "4d" ~ "T4d",
+                        time == "4m" ~ "T4m",
+                        TRUE ~ as.character(time)),
+         sample = case_when((sample == "8" & depth == "1018m") ~ "8a",
+                            (sample == "8" & depth == "1040m") ~ "8b",
+                            TRUE ~ sample),
+         sample = factor(sample, levels = c("5","8a","8b","13","14","15","19","20","21"))
+         ) %>%
+  filter(sseqid != "*")%>%
+  group_by(sample, contig) %>%
+  arrange(-pident, .by_group = TRUE) %>%
+  slice_head(n = 1) %>%
+  ungroup()%>%
+  select(sseqid, qseqid) %>%
+  distinct()
+
+df_euk_taxa_lookup_2 <- read_table(paste0(input_path, "Euk_data/checkm_ssu/classify_euk/PR2_table/tax_PR2.txt"), col_names = FALSE) %>%
+  rename(id = X1, taxonomy = X2)
+
+df_euk_ab_coverage <- read_table(paste0(input_path, "Euk_data/checkm_ssu/anvio_coverage/coverage_summary.txt"), col_names = TRUE) %>%
+  separate(sample, into = c(NA, "depth", NA, "time", "sample", NA), sep = "_") %>%
+  mutate(sample = case_when((sample == "8" & depth == "1018m") ~ "8a",
+                            (sample == "8" & depth == "1040m") ~ "8b",
+                             TRUE ~ sample)) %>%
+  select(sample, contig, coverage) %>%
+  left_join(df_euk_ab_2, by = join_by("contig" == "qseqid"))%>%
+  left_join(df_euk_taxa_lookup_2, by = join_by("sseqid" == "id")) %>%
+  filter(!is.na(sseqid)) %>%
+  separate(taxonomy, into = c("domain", "division", "subdivision", "class", "order", "family", "genus", "species", NA), sep = ";") %>%
+  filter(!grepl("Chaetoc", species))
+
+# df_euk_ab_2 <- read_csv(paste0(input_path, "Euk_data/checkm_ssu/classify_euk/PR2_table/checkm_Euk_cov.csv")) %>%
+#   select(-`Feature ID`, -Confidence) %>%
+#   filter(!grepl("Chaetoc", Taxon))
+#   column_to_rownames(var = "")
+
+
+
+############## dendrogram
+df_euk_ab_full_excChaet_wide_2 <- df_euk_ab_coverage %>%
+  select(sample, species, coverage) %>%
+  group_by(sample, species) %>%
+  arrange(-coverage, .by_group = TRUE) %>%
+  reframe(sample, species, coverage = mean(coverage)) %>%
+  distinct() %>%
+  pivot_wider(names_from = sample, values_from = coverage) %>%
+  column_to_rownames(var = "species") %>%
+  data.matrix()
+
+dendro.colclus2 = hclust(dist(t(df_euk_ab_full_excChaet_wide_2)))
+dendro.rowclus2 = hclust(dist(df_euk_ab_full_excChaet_wide_2))
+
+df_euk_ab_full_excChaet_long_2 <- hmReady(df_euk_ab_full_excChaet_wide_2, colclus = dendro.colclus2, rowclus = dendro.rowclus2) %>%
+  mutate(x = case_when(variable == "5" ~ 1,
+                       variable == "8a" ~ 2,
+                       variable == "8b" ~ 3,
+                       variable == "13" ~ 4,
+                       variable == "14" ~ 5,
+                       variable == "15" ~ 6,
+                       variable == "19" ~ 7,
+                       variable == "20" ~ 8,
+                       variable == "21" ~ 9),
+         variable = factor(variable, levels = c("5","8a","8b","13","14","15","19","20","21")))
+
+
+
+######## plot
+euk_ab_tile2 <- ggplot()+
+  geom_tile(data = df_euk_ab_full_excChaet_long_2, aes(x=variable, y=y, fill = value))+
+  geom_dendro(dendro.rowclus2, pointing = "side", xlim = c(10, 12))+
+
+  scale_fill_viridis(option = "magma", limits=c(0,50), direction = -1)+
+
+  labs(x = "", y = "Taxonomic group\n", fill = "Read coverage")+
+  theme_classic() +
+  theme(plot.margin = unit(c(5.5,20,5.5,3), "points"),
+        axis.text.y = element_text(hjust = 1,
+                                   size = unit(18, "points")),
+        axis.title = element_text(size = unit(18, "points"),
+                                  face = "bold"),
+        legend.text = element_text(size = unit(16, "points"), 
+                                   angle = 0,
+                                   hjust = 0,
+                                   vjust = 0.5),
+        legend.title = element_text(size = unit(18, "points"), vjust = 1))
+
+if (save) {
+  ggsave(euk_ab_tile2, 
+         filename = paste0(output_path, "heatmap_euk_ssu_pr2_exChaet_species.pdf"),
+         device = "pdf", dpi = 300,
+         height = 12, width = 14)
+} else {
+  euk_ab_tile2
+}
+
+```
+
+
+

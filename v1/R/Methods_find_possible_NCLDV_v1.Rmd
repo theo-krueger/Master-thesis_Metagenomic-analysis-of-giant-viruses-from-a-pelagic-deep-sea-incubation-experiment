@@ -1,0 +1,151 @@
+---
+title: "Methods_YuChen_findNCLDV"
+author: "Theo Krueger"
+date: "2023-02-27"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+```
+
+```{r, echo = TRUE, message = FALSE, warning = FALSE}
+# core packages
+library(tidyverse)
+library(reshape2)
+# more packages
+library(readxl)
+library(viridis)
+#logical arguments
+`%notin%` <- Negate(`%in%`)
+
+read_excel_allsheets <- function(filename, tibble = FALSE, ...) {
+    # I prefer straight data.frames
+    # but if you like tidyverse tibbles (the default with read_excel)
+    # then just pass tibble = TRUE
+    sheets <- readxl::excel_sheets(filename)
+    x <- lapply(sheets, function(X) readxl::read_excel(filename, sheet = X))
+    if(!tibble) x <- lapply(x, as.data.frame)
+    names(x) <- sheets
+    x
+}
+```
+
+```{r read, warning=FALSE}
+all_data <- read_excel_allsheets("~/Library/CloudStorage/GoogleDrive-theokrueger.marbio@gmail.com/My Drive/AG_Worden/BirdBags/YuChens_pipeline/V1/1_sorting_virus_from_bins.xlsx") %>%
+  lapply(function(x) {colnames(x)[1] <- 'bin_name'; x}) %>%
+  bind_rows(, .id = "method") %>%
+  filter(seqname != "seqname") %>%
+  mutate_at(c("length", "max_score"), as.numeric)
+
+```
+
+```{r first try}
+first_filter_summary <- all_data %>%
+  group_by(method, bin_name)%>%
+  add_count(max_score_group, name = "n_per_group") %>%
+  group_by(method, bin_name, max_score_group) %>%
+  reframe(method, bin_name, max_score_group, n_per_group, length_per_group = sum(length)) %>%
+  distinct() %>%
+  group_by(method, bin_name)%>%
+  mutate(n_total = sum(n_per_group), length_total = sum(length_per_group), length_perc = length_per_group / length_total)
+
+first_filter_maybe_NCLDV <- first_filter_summary %>%
+  filter(max_score_group == "NCLDV" & length_perc >= 0.75)
+first_filter_maybe_NCLDV_names <- first_filter_maybe_NCLDV$bin_name
+```
+
+```{r use a score instead, contig level}
+second_filter <- all_data %>%
+  filter(bin_name %in% first_filter_maybe_NCLDV_names)
+
+second_filter_summary <- second_filter %>%
+  mutate(score_ID.x.length = max_score * length)%>%
+  group_by(method, bin_name) %>%
+  mutate(bin_length = sum(length)) %>%
+  group_by(method, bin_name, max_score_group) %>%
+  reframe(bin_name, max_score_group, max_score, length, score_ID.x.length, score_normalized = sum(score_ID.x.length)/bin_length)
+  
+second_filter_maybe_NCLDV <- second_filter_summary %>%
+  filter(max_score_group == "NCLDV") %>%
+  group_by(method, bin_name)%>%
+  filter(row_number() == 1) %>%
+  arrange(desc(score_normalized))
+```
+
+```{r choose bins to look at}
+look_at <- second_filter_maybe_NCLDV %>%
+  filter(score_normalized > 0.8)
+look_at_names <- look_at$bin_name
+```
+
+```{r save output}
+write_lines(first_filter_maybe_NCLDV_names, "~/Library/CloudStorage/GoogleDrive-theokrueger.marbio@gmail.com/My Drive/AG_Worden/BirdBags/Comparison_YuChens_pipeline/first_filter_bin_names.txt")
+
+write_lines(look_at_names, "~/Library/CloudStorage/GoogleDrive-theokrueger.marbio@gmail.com/My Drive/AG_Worden/BirdBags/YuChens_pipeline/v1/second_filter_bin_names.txt")
+```
+
+```{r import stats for chosen bins}
+# comparison NCLDV
+comp_NCLDV <- read.table("~/Library/CloudStorage/GoogleDrive-theokrueger.marbio@gmail.com/My Drive/AG_Worden/BirdBags/YuChens_pipeline/Comparison_files/ref_NCLDV_MAGs_size_hmmer", header = TRUE)%>%
+  rename(n_NCVOG = NCVOG_count, n_NCVOG_uniq = NCVOG_count_uniq, bin = ref_NCLDV) %>%
+  mutate(class = "ref_NCLDV")
+
+# comparison prokaryotes
+comp_prok <- read.table("~/Library/CloudStorage/GoogleDrive-theokrueger.marbio@gmail.com/My Drive/AG_Worden/BirdBags/YuChens_pipeline/Comparison_files/BB_Prok_MAGs_size_hmmer", header = TRUE)%>%
+  rename(n_NCVOG = NCVOG_count, n_NCVOG_uniq = NCVOG_count_uniq, bin = non_NCLDV) %>%
+  mutate(class = "ref_prok")
+
+# maybe NCLDV
+maybe_NCLDV_v1 <- read.table("~/Library/CloudStorage/GoogleDrive-theokrueger.marbio@gmail.com/My Drive/AG_Worden/BirdBags/YuChens_pipeline/V1/NCLDV_files/possible_NCLDV_summary_wtitle.txt", header = TRUE)%>%
+  mutate(class = "maybe_NCLDV",
+         genome_length = as.integer(genome_length),
+         n_NCVOG = as.integer(n_NCVOG),
+         n_NCVOG_uniq = as.integer(n_NCVOG_uniq)) %>%
+  filter(bin != "bin")
+
+
+# combined 
+combined_v1 <- bind_rows(list(comp_NCLDV,comp_prok,maybe_NCLDV_v1))
+```
+
+```{r plot NCVOG}
+plot_NCVOG_v1 <- ggplot(data = combined_v1)+
+  geom_point(aes(x = genome_length, y= n_NCVOG, col = class))+
+  geom_smooth(aes(x = genome_length, y = n_NCVOG, col = class), method = "lm")+
+  scale_y_continuous(limits = c(0,300))+
+  labs(title = "v1")+
+  theme_classic()
+
+plot_NCVOG_v1
+```
+
+
+```{r plot NCVOG unique}
+plot_NCVOG_uniq_v1 <- ggplot(data = combined_v1)+
+  geom_point(aes(x = genome_length, y= n_NCVOG_uniq, col = class))+
+  geom_smooth(data = subset(combined_v1, class == "ref_NCLDV" | class == "ref_prok"), 
+              aes(x = genome_length, y = n_NCVOG_uniq, col = class), method = "lm")+
+  scale_y_continuous(limits = c(0,50))+
+  labs(title = "v1")+
+  theme_classic()
+
+
+plot_NCVOG_uniq_v1
+```
+
+```{r save plots}
+ggsave(plot = plot_NCVOG_v1, filename = "~/Library/CloudStorage/GoogleDrive-theokrueger.marbio@gmail.com/My Drive/AG_Worden/BirdBags/Comparison_YuChens_pipeline/v1/v1_n_NCVOG_vs_genome_size.pdf", device = "pdf")
+ggsave(plot = plot_NCVOG_uniq_v1, filename = "~/Library/CloudStorage/GoogleDrive-theokrueger.marbio@gmail.com/My Drive/AG_Worden/BirdBags/Comparison_YuChens_pipeline/v1/v1_n_uniq_NCVOG_vs_genome_size.pdf", device = "pdf")
+```
+
+
+```{r closer look}
+closer_look_names_uniq <- maybe_NCLDV_v1 %>% filter(n_NCVOG_uniq >= 25) %>% select(bin)
+closer_look_names_uniq <- closer_look_names_uniq$bin
+closer_look_names_uniq <- gsub(".", "_", closer_look_names_uniq, fixed = TRUE)
+closer_look_names_uniq
+```
+
+

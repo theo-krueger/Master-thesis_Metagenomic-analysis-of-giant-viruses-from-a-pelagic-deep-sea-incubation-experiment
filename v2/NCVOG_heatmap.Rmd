@@ -1,0 +1,81 @@
+---
+title: "NCVOG_heatmap"
+author: "Theo Krueger"
+date: "2023-07-20"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r, echo = TRUE, message = FALSE, warning = FALSE}
+# core packages
+library(tidyverse)
+library(janitor)
+library(ggdendroplot)
+library(viridis)
+
+# logical arguments
+`%notin%` <- Negate(`%in%`)
+
+# functions
+round_any = function(x, accuracy, f = round){f(x / accuracy) * accuracy}
+```
+
+```{r}
+folder <- "~/Google Drive/My Drive/AG_Worden/BirdBags/YuChens_pipeline/v2_ESOM/NCVOGs/"
+
+data_own <- read.csv(paste0(folder, "NCVOG_table_per_bin_full_v2_ESOM.csv")) %>%
+  t() %>%
+  row_to_names(row_number = 1) %>%
+  as.data.frame()
+data_Needham <- readxl::read_xlsx(paste0(folder,"NCVOGs_found_perGenome_selection.xlsx"), skip = 1) %>%
+  rename(NCVOG = ...1, description = ...2) %>%
+  select(-description, -`Maximum in Finished Genomes`) %>%
+  t() %>%
+  row_to_names(row_number = 1) %>%
+  as.data.frame()
+
+data <- bind_rows(data_own, data_Needham) %>%
+  replace(is.na(.), 0) %>%
+  as.matrix()
+
+## dendro
+dendro.colclus = hclust(dist(t(data)))
+dendro.rowclus = hclust(dist(data))
+
+tile_data <- hmReady(data, colclus = dendro.colclus, rowclus = dendro.rowclus) %>%
+  mutate(value = as.integer(value)) %>%
+  replace(. == 0 , NA)
+
+```
+
+
+```{r plot, fig.height=10, fig.width=15}
+NCVOG_tile <- ggplot()+
+  geom_tile(data = tile_data, aes(x=variable, y=y, fill = value))+
+  geom_dendro(dendro.rowclus, 
+              pointing = "side", 
+              xlim = c(max(tile_data$x, na.rm = TRUE)+0.5, 
+                       max(tile_data$x, na.rm = TRUE)+length(unique(tile_data$x))/10))+
+  #geom_dendro(dendro.colclus, ylim = c(max(tile_data$y)+0.5, max(tile_data$y)+length(unique(tile_data$y))/10))+
+  
+  scale_fill_viridis(option = "magma", direction = -1, 
+                     discrete = FALSE, 
+                     na.value = "white", 
+                     limits = c(0, round_any(max(tile_data$value, na.rm = TRUE), 2, f = ceiling)),
+                     breaks = seq(0, round_any(max(tile_data$value, na.rm = TRUE), 2, f = ceiling)+1, by = 2)
+                     )+
+
+  labs(x = "NCVOGs", y = "", fill = "Copies")+
+  theme_classic()+
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5),
+        axis.line = element_blank())
+
+NCVOG_tile
+```
+```{r save}
+ggsave(NCVOG_tile, filename = paste0(folder, "NCVOG_heatmap_own_Needham.pdf"), device = "pdf", dpi = 300, height = 10, width = 15)
+```
+

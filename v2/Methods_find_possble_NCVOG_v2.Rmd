@@ -1,0 +1,239 @@
+---
+title: "Methods_YuChen_findNCLDV"
+author: "Theo Krueger"
+date: "2023-03-24"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+```
+
+```{r, echo = TRUE, message = FALSE, warning = FALSE}
+# core packages
+library(tidyverse)
+library(reshape2)
+# more packages
+library(ggrepel)
+library(readxl)
+library(viridis)
+library(ggh4x)
+library(ggpubr)
+#logical arguments
+`%notin%` <- Negate(`%in%`)
+
+# paths 
+base_path_input <- "~/Google Drive/My Drive/AG_Worden/BirdBags/YuChens_pipeline/"
+version <- "v2"
+
+setwd(base_path_input)
+path_input <- paste0(base_path_input, version, "/")
+
+path_output <- path_input
+path_output_figures <- paste0(path_output, "figures/")
+
+# mode
+save <- FALSE
+labels = FALSE
+```
+
+```{r }
+virsort <- read.table(paste0(path_input, "virsort2_v1tov2_summary_clean.table"), header = TRUE) %>%
+    rename(method = Method, bin_name = binname)
+virsort2_filter1_1 <- virsort %>%
+  group_by(bin_name, method) %>%
+  add_count(max_score_group, name = "n_per_group") %>%
+  group_by(method, bin_name, max_score_group) %>%
+  reframe(method, bin_name, max_score_group, n_per_group, length_per_group = sum(length)) %>%
+  distinct() %>%
+  group_by(method, bin_name)%>%
+  mutate(n_total = sum(n_per_group), length_total = sum(length_per_group), length_perc = length_per_group / length_total)
+virsort2_filter1_2 <- virsort2_filter1_1 %>%
+  filter(max_score_group == "NCLDV" & length_perc >= 0.75)
+bins_filter1_new <- unique(virsort2_filter1_2$bin_name)
+
+virsort2_filter2_1 <- virsort %>%
+  filter(bin_name %in% bins_filter1_new)%>%
+  mutate(score_ID.x.length = max_score * length)%>%
+  group_by(method, bin_name) %>%
+  mutate(bin_length = sum(length)) %>%
+  group_by(method, bin_name, max_score_group) %>%
+  reframe(bin_name, max_score_group, max_score, length, score_ID.x.length, score_normalized = sum(score_ID.x.length)/bin_length) %>%
+  filter(max_score_group == "NCLDV") %>%
+  group_by(method, bin_name)%>%
+  filter(row_number() == 1) %>%
+  arrange(desc(score_normalized))
+
+virsort2_filter2_2 <- virsort2_filter2_1 %>%
+  filter(score_normalized > 0.8)
+bins_filter2_new <- unique(virsort2_filter2_2$bin_name)
+
+
+if (save){
+  write_lines(bins_filter2_new, file = paste0(path_output, version, "_bins_remaining_afterfilter.txt"))
+}
+```
+
+```{r data NCVOGs size, message=FALSE}
+# NCVOGs stats
+own_NCLDV <- read.table(paste0(path_input, "possible_NCLDV_summary_wtitle_add.txt"), header = TRUE) %>%
+    filter(bin != "bin")%>%
+    mutate(class = "maybe_NCLDV",
+         genome_length = as.integer(genome_length),
+         n_NCVOG = as.integer(n_NCVOG),
+         n_NCVOG_uniq = as.integer(n_NCVOG_uniq))
+
+# bins after filtering
+bins_after_second_filtering <- bins_filter2_new
+
+# comparison NCLDV
+comp_NCLDV <- read.table(paste0(base_path_input, "Comparison_files/ref_NCLDV_MAGs_size_hmmer"), header = TRUE)%>%
+  rename(n_NCVOG = NCVOG_count, n_NCVOG_uniq = NCVOG_count_uniq, bin = ref_NCLDV) %>%
+  mutate(class = "ref_NCLDV")
+
+# comparison prokaryotes
+comp_prok <- read.table(paste0(base_path_input, "Comparison_files/BB_Prok_MAGs_size_hmmer"), header = TRUE)%>%
+  rename(n_NCVOG = NCVOG_count, n_NCVOG_uniq = NCVOG_count_uniq, bin = non_NCLDV) %>%
+  mutate(class = "ref_prokaryotes")
+
+
+# combined
+combined <- bind_rows(list(comp_NCLDV,comp_prok,own_NCLDV)) %>%
+  mutate(genome_length = genome_length / 1000000)
+
+```
+
+```{r plot NCVOG, message=FALSE}
+plot_title <- "n_NCVOG_vs_genome_size"
+plot_NCVOG <- ggplot(data = combined)+
+  geom_point(aes(x = genome_length, y= n_NCVOG, col = class))+
+  geom_smooth(data = subset(combined, class == "ref_NCLDV" | class == "ref_prokaryotes"), 
+              aes(x = genome_length, y = n_NCVOG, col = class), method = "lm")+
+  scale_y_continuous(limits = c(0,300))+
+  labs(title = paste0(version, "_", plot_title))+
+  theme_classic()
+if (labels){
+  plot_NCVOG <- plot_NCVOG+
+    geom_text_repel(data = subset(combined, class == "maybe_NCLDV"),
+                    aes(x = ifelse(n_NCVOG > 60, genome_length, NA),
+                        y = ifelse(n_NCVOG > 60, n_NCVOG, NA),
+                        label = ifelse(n_NCVOG > 60, bin, NA)),
+                    size = 2,
+                    max.overlaps = Inf,
+                    box.padding = 0.5)
+}
+
+if (save) {
+  ggsave(plot = plot_NCVOG, filename = paste0(path_output_figures, version, "_", plot_title, ".pdf"), device = "pdf")
+} else {
+  plot_NCVOG
+}
+```
+
+
+```{r plot NCVOG unique, message=FALSE, fig.width=8, fig.height=6}
+plot_title <- "uniq_NCVOG_vs_genome_size"
+
+plot_NCVOG_uniq <- ggplot(data = combined)+
+  geom_point(aes(x = genome_length, y= n_NCVOG_uniq, col = class))+
+  geom_smooth(data = subset(combined, class == "ref_NCLDV" | class == "ref_prokaryotes"), 
+              aes(x = genome_length, y = n_NCVOG_uniq, col = class), 
+              method = "lm", se = FALSE)+
+  stat_regline_equation(data = subset(combined, class == "ref_NCLDV" | class == "ref_prokaryotes"), 
+                        aes(x = genome_length, y = n_NCVOG_uniq, col = class, label = ..eq.label..),
+                        label.x = c(0,5.5), label.y = c(48,12)) +
+  stat_regline_equation(data = subset(combined, class == "ref_NCLDV" | class == "ref_prokaryotes"), 
+                        aes(x = genome_length, y = n_NCVOG_uniq, col = class, label = ..rr.label..),
+                        label.x = c(0,5.5), label.y = c(46,10)) +
+  
+  scale_y_continuous(limits = c(0,50),
+                     minor_breaks = seq(0,50, by = 5))+
+  scale_x_continuous(limits = c(0,7),
+                     minor_breaks = seq(0,7, by = 0.5),
+                     breaks = seq(0,7, by = 1))+
+  scale_color_manual(values = c("ref_prokaryotes"="#284952", "ref_NCLDV"="#AE90B6" , "maybe_NCLDV"="#e09f3e"))+
+  labs(x = "Genome length [Mb]",
+       y = "Number of unique NCVOG",
+       color = "Group")+
+  theme_classic()+
+  theme(axis.title = element_text(size = 16, face = "bold"),
+        axis.text = element_text(size = 14),
+        legend.text = element_text(size = 14),
+        legend.title = element_text(size = 16),
+        legend.position = c(0.8, 0.8)
+        )+
+  guides(x = "axis_minor", y = "axis_minor")
+
+if (labels) {
+  plot_NCVOG_uniq <- plot_NCVOG_uniq +
+      geom_text_repel(data = subset(combined, class == "maybe_NCLDV"),
+                      aes(x = ifelse(n_NCVOG_uniq > 20, genome_length, NA),
+                          y = ifelse(n_NCVOG_uniq > 20, n_NCVOG_uniq, NA),
+                          label = ifelse(n_NCVOG_uniq > 20, bin, NA)),
+                      size = 2,
+                      max.overlaps = Inf,
+                      box.padding = 0.5)
+}
+
+if (save){
+  ggsave(plot = plot_NCVOG_uniq, 
+         filename = paste0(path_output_figures, version, "_", plot_title, "_rect.pdf"), 
+         device = "pdf",
+         height = 6, width = 8)
+  ggsave(plot = plot_NCVOG_uniq, 
+         filename = paste0(path_output_figures, version, "_", plot_title, "_square.pdf"), 
+         device = "pdf",
+         height = 6, width = 6)
+} else{
+  plot_NCVOG_uniq
+}
+```
+
+```{r uniq NCVOG for special bin}
+special_bin <- "BB_2016_1040m_12C_4m_19_L002_MaxBin_bins_006_2"
+plot_NCVOG_uniq_special <- plot_NCVOG_uniq +
+        geom_text_repel(data = subset(combined, bin == special_bin),
+                      aes(x = ifelse(n_NCVOG_uniq > 20, genome_length, NA),
+                          y = ifelse(n_NCVOG_uniq > 20, n_NCVOG_uniq, NA),
+                          label = ifelse(n_NCVOG_uniq > 20, bin, NA)),
+                      size = 2,
+                      max.overlaps = Inf,
+                      box.padding = 0.5)
+if (save){
+  ggsave(plot = plot_NCVOG_uniq_special, 
+         filename = paste0(path_output_figures, version, "_", plot_title, "_", special_bin, ".pdf"), 
+         device = "pdf")
+} else {
+  plot_NCVOG_uniq_special
+}
+```
+
+```{r closer look}
+# check those with overlap with prok genomes, maybe split up?
+check_1 <- own_NCLDV %>%
+  filter(n_NCVOG_uniq < 20 & genome_length > 1000000)
+
+check_2 <- own_NCLDV %>%
+  filter(n_NCVOG > 50 & genome_length > 2000000)
+
+above20uniq <- own_NCLDV %>%
+  filter(bin %in% bins_filter2_new) %>%
+  filter(n_NCVOG_uniq > 20)
+bins_above20uniq <- unique(above20uniq$bin)
+
+above25uniq <- own_NCLDV %>%
+  filter(bin %in% bins_filter2_new) %>%
+  filter(n_NCVOG_uniq > 25)
+bins_above25uniq <- unique(above25uniq$bin)
+
+if (save){
+  write_csv(check_1, file = paste0(path_output, version, "_bins_to_refine_further_uniqNCVOG_based.csv"))
+  write_csv(check_2, file = paste0(path_output, version, "_bins_to_refine_further_nNCVOG_based.csv"))
+  write_csv(final_filter, file = paste0(path_output, version, "_bins_above_25_uniq_NCVOGs.csv"))
+  
+  write_lines(bins_above25uniq, file = paste0(path_output, version, "_bins_afterfilter_above_25_uniqNCVOG.txt"))
+
+}
+```
+

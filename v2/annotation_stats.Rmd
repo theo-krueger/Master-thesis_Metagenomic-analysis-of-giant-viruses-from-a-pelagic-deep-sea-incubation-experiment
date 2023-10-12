@@ -1,0 +1,59 @@
+---
+title: "annotation_stats"
+author: "Theo Krueger"
+date: "2023-07-31"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r, echo = TRUE, message = FALSE, warning = FALSE}
+# core packages
+library(tidyverse)
+# more packages
+```
+
+```{r}
+folder <- "/Users/tkrueger/Library/CloudStorage/GoogleDrive-theokrueger.marbio@gmail.com/My Drive/AG_Worden/BirdBags/YuChens_pipeline/v2_ESOM/annot/NCBI_NR/"
+files <- list.files(folder)
+
+# file <- "BB_2016_1040m_12C_4m_19_L002_ESOM_4_3-contigs.fa.faa.vs.NR.diamond"
+```
+
+
+```{r}
+output <- data.frame(matrix(ncol = 3, nrow = 0)) %>%
+  setNames(c("bin", "n_annot_prot", "n_annot_prot_non_hypothetical")) %>%
+  mutate(bin = as.character(bin))
+  
+for (file in files) {
+  
+  name <- str_split(file, "-")[[1]][1]
+  
+  df <- read.delim(paste0(folder, file), header = FALSE, sep = "\t") %>%
+    setNames(c("qseqid","sseqid","pident","length","mismatch","gapopen","qstart","qend","sstart","send","evalue","bitscore","stitle","staxonids","sscinames"))
+  
+  n_prot_annot <- df %>%
+    # group_by(qseqid) %>%
+    # reframe(qseqid, n()) %>%
+    group_by(qseqid) %>%
+    top_n(1) %>%
+    nrow()
+  
+  
+  hyp_keywords <- c("hypothetic", "putative", "potential")
+  n_prot_annot_no_hypo <- df %>%
+    filter(!grepl(paste(hyp_keywords, collapse='|'), stitle, ignore.case=TRUE)) %>%
+    group_by(qseqid) %>%
+    top_n(1) %>%
+    nrow()
+  
+  output <- output %>%
+    add_row(bin = name, n_annot_prot = n_prot_annot, n_annot_prot_non_hypothetical = n_prot_annot_no_hypo)
+}
+
+write_delim(output, file = paste0(folder, "n_annotated_proteins.txt"), delim = "\t", col_names = FALSE)
+```
+

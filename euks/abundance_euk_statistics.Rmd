@@ -1,0 +1,74 @@
+---
+title: "abundance_statistics"
+author: "Theo Krueger"
+date: "2023-05-25"
+output: html_document
+---
+
+```{r, echo = TRUE, message = FALSE, warning = FALSE}
+# core packages
+library(tidyverse)
+library(ggpubr)
+library(rstatix)
+library(datarium)
+library(broom)
+
+# logical arguments
+`%notin%` <- Negate(`%in%`)
+
+```
+
+```{r setup paths and logic}
+# logical factors
+save <- FALSE
+
+# paths
+input_path <- "/Users/tkrueger/Library/CloudStorage/GoogleDrive-theokrueger.marbio@gmail.com/My Drive/AG_Worden/BirdBags/YuChens_pipeline/v2_ESOM/abundance/"
+input_file <- "euk_rel_ab.csv"
+# input_file <- "euk_rel_ab_top5.csv"
+
+output_path <- input_path
+
+```
+
+```{r}
+df <- read.csv(paste0(input_path, input_file)) %>%
+  mutate(time = factor(time, levels = c("T0", "T4d", "T4m"))) %>%
+  group_by(group) %>%
+  mutate(id = row_number())
+
+ggboxplot(df, x = "time", y = "read_abundance", color = "group", add = "point")
+```
+
+```{r outliers}
+df %>%
+  group_by(time, group) %>%
+  identify_outliers(read_abundance)
+```
+```{r normality, fig.height=5, fig.width=30}
+df %>% 
+  group_by(time, group) %>%
+  shapiro_test(read_abundance)
+
+ggqqplot(df, "read_abundance", facet.by = c("time", "group"))
+```
+
+```{r ANOVA}
+anova_results <- df %>%
+  group_by(group) %>%
+  do(tidy(aov(read_abundance ~ time, data = .))) %>%
+  mutate(sign = case_when((term == "time" & p.value >= 0.1 & p.value < 1) ~ " ",
+                          (term == "time" & p.value >= 0.05 & p.value < 0.1) ~ ".",
+                          (term == "time" & p.value >= 0.01 & p.value < 0.05) ~ "*",
+                          (term == "time" & p.value >= 0.001 & p.value < 0.01) ~ "**",
+                          (term == "time" & p.value >= 0 & p.value < 0.001) ~ "***"))
+
+anova_results_sig <- anova_results %>%
+  filter(p.value < 0.05)
+
+if (save) {
+  write.csv(anova_results, file = paste0(output_path, "euk_rel_ab_anova_results.csv"))
+  # write.csv(anova_results, file = paste0(output_path, "euk_rel_ab_top5_anova_results.csv"))
+}
+```
+

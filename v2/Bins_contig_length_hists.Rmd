@@ -1,0 +1,68 @@
+---
+title: "Contigs_histo_plots"
+author: "Theo Krueger"
+date: "2023-05-12"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r, echo = TRUE, message = FALSE, warning = FALSE}
+# core packages
+library(tidyverse)
+library(reshape2)
+# more packages
+library(viridis)
+
+# logical arguments
+`%notin%` <- Negate(`%in%`)
+
+```
+```{r setup paths and logic}
+# logical factors
+save <- TRUE
+
+# paths
+input_path <- "~/Google Drive/My Drive/AG_Worden/BirdBags/YuChens_pipeline/v2/"
+input_file <- "genomes_contig_lengths_afterfilter_over25uniqNCVOG.txt"
+
+output_path <- paste0(input_path, "figures/contig_length_hists/")
+
+if (!dir.exists(output_path)){
+  dir.create(output_path)
+} 
+```
+
+```{r read data}
+df <- read.table(paste0(input_path, input_file)) %>%
+  rename(bin = V1, contig = V2, length = V3)
+
+```
+
+```{r single plots}
+bins <- unique(df$bin)
+
+for (bin_name in bins){
+  
+  df_sub <- df %>% filter(bin == bin_name)
+  
+  plot <- ggplot(data = df_sub)+
+    geom_histogram(aes(x=length))+
+    scale_x_continuous(limits = c(0, max(df_sub$length+2000)))+
+    labs(title = bin_name)+
+    theme_classic()
+
+  
+  if (save) {
+  date = format(Sys.Date(), "%Y%m%d")
+  output_file <- paste0(date, "_Plot_hist_contig_lengths_", bin_name, ".pdf") 
+  ggsave(plot = plot, 
+         filename = paste0(output_path, output_file),
+         device = "pdf")
+  }
+}
+
+```
+

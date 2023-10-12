@@ -1,0 +1,99 @@
+---
+title: "abundance_moreplots"
+author: "Theo Krueger"
+date: "2023-05-27"
+output: html_document
+---
+
+```{r, echo = TRUE, message = FALSE, warning = FALSE}
+# core packages
+library(tidyverse)
+library(ggh4x)
+
+# logical arguments
+`%notin%` <- Negate(`%in%`)
+
+```
+
+```{r setup paths and logic}
+# logical factors
+save <- FALSE
+
+# paths
+input_path <- "/Users/tkrueger/Library/CloudStorage/GoogleDrive-theokrueger.marbio@gmail.com/My Drive/AG_Worden/BirdBags/YuChens_pipeline/v2_ESOM/abundance/"
+input_file_data <- "euk_rel_ab.csv"
+input_file_abundant_bins <- "euk_rel_ab_high_top5.txt"
+
+output_path <- input_path
+
+```
+
+```{r old data}
+
+abundant_bins <- scan(paste0(input_path, input_file_abundant_bins), character(), sep = "\n")
+abundant_bins <- gsub(";", " ", abundant_bins)
+
+anova_res <- read.csv(paste0(input_path, "euk_rel_ab_anova_results.csv"))
+anova_res_sig <- anova_res %>%
+  filter(p.value < 0.05) %>%
+  mutate(group = gsub(";", " ", group))
+
+
+df <- read.csv(paste0(input_path, input_file_data)) %>%
+  mutate(group = gsub(";", " ", group),
+         # group = case_when(group %in% abundant_bins ~ group,
+         #                   TRUE ~ "Others"),
+         sample = factor(sample, levels = c("5", "8a", "8b", "13", "14", "15", "19","20", "21")),
+         time = case_when(sample %in% c("5","8a","8b") ~ "T0",
+                          sample %in% c("13","14","15") ~ "T4d",
+                          sample %in% c("19","20","21") ~ "T4m"),
+         # label = paste0(sample, "&", time),
+         # label = factor(label, levels = c("5&T0","8a&T0","8b&T0","13&T4d","14&T4d","15&T4d","19&T4m","20&T4m","21&T4m"))
+         significant = case_when(group %in% anova_res_sig$group ~ "yes",
+                                 TRUE ~ "no"))
+df_sig <- df %>%
+  filter(significant == "yes")
+
+```
+
+```{r old data barplot, fig.height=5, fig.width=8}
+plot <- ggplot(data= df)+
+  geom_col(aes(x=label, y=read_abundance, fill= group), 
+           position = "stack")+
+  scale_y_continuous()+
+  labs(x = "Sample number", y = "Relative read abundance", fill = "Group")+
+  theme_classic()+
+  theme()+
+  guides(x = guide_axis_nested(delim = "&"))
+  
+if (save){
+  ggsave(plot, filename = paste0(output_path, "euk_rel_ab_barplot.pdf"),
+         device = "pdf", dpi = 300,
+         height = 5, width = 8)
+} else {
+  plot
+}
+```
+
+```{r old data dotplot, fig.height=5, fig.width=20}
+plot_dot <- ggplot(data = df)+
+  geom_point(aes(x=sample, y = read_abundance, color = significant))+
+  facet_wrap2(.~group, ncol = 10)+
+  scale_color_manual(values = c("yes" = "red", "no" = "black"))+
+  theme_classic()
+
+plot_dot_sig <- ggplot(data = df_sig)+
+  geom_point(aes(x=sample, y = read_abundance))+
+  scale_y_continuous(limits = c(0,NA))+
+  facet_wrap2(.~group, ncol = 8)+
+  theme_classic()
+
+if (save){
+  ggsave(plot_dot, filename = paste0(output_path, "euk_rel_ab_dotplot_all.pdf"),
+         device = "pdf", dpi = 300,
+         height = 10, width = 30)
+} else {
+  plot_dot
+  plot_dot_sig
+}
+```

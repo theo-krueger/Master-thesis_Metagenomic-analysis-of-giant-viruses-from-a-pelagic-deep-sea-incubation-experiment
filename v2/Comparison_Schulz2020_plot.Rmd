@@ -1,0 +1,119 @@
+---
+title: "Comparison_YC_32_Schulz2020"
+author: "Theo Krueger"
+date: "2023-05-09"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r, echo = TRUE, message = FALSE, warning = FALSE}
+# core packages
+library(tidyverse)
+library(reshape2)
+# more packages
+library(viridis)
+
+# logical arguments
+`%notin%` <- Negate(`%in%`)
+
+```
+```{r setup paths and logic}
+# logical factors
+save <- FALSE
+
+# paths
+input_path <- "~/Google Drive/My Drive/AG_Worden/BirdBags/YuChens_pipeline/v2/Comparison_Schulz2020/"
+
+output_path <- paste0(input_path, "figures/")
+
+if (!dir.exists(output_path)){
+  dir.create(output_path)
+} 
+```
+
+```{r 32, fig.height=10, fig.width=10}
+input_file <- "Comparison_YC_32_polB_vs_Schulz2020_wtitle.diamond"
+df <- read.table(paste0(input_path, input_file), header = TRUE)
+
+df2 <- df %>%
+  group_by(qseqid) %>%
+  arrange(desc(bitscore), .by_group = TRUE) %>%
+  filter(row_number() == 1) %>%
+  separate(qseqid, sep = "-", into = c("bin", "contig"))
+
+plot <- ggplot(data = df2)+
+  geom_point(aes(x = reorder(bin, pident), y = pident, col = bitscore), size = 3)+
+  scale_y_continuous(limits = c(20,100))+
+  labs(col = "diamond blast\nbitscore",
+       y = "percent identity",
+       x = "bin names")+
+  scale_color_viridis(discrete = FALSE)+
+  theme_classic()+
+  theme(axis.text.x = element_text(angle = 90, hjust = 0.95, vjust = 0.2),
+        axis.title = element_text(size = 18),
+        axis.text = element_text(size = 16),
+        legend.title = element_text(size = 16),
+        legend.text = element_text(size = 16))
+
+if (save) {
+  date = format(Sys.Date(), "%Y%m%d")
+  output_file <- paste0(date, "_Plot_Comparison_Schulz.pdf") 
+  ggsave(plot = plot, 
+         filename = paste0(output_path, output_file),
+         device = "pdf",
+         width = 10,
+         height = 10)
+} else {
+  plot
+}
+
+```
+
+
+```{r 23, fig.height=10, fig.width=10}
+input_file <- "Comparison_YC_v1_23_polB_vs_Schulz2020_wtitle.diamond"
+
+input_path_metadata <- "/Users/tkrueger/Library/CloudStorage/GoogleDrive-theokrueger.marbio@gmail.com/My Drive/AG_Worden/BirdBags/YuChens_pipeline/v2_ESOM/Phylogeny/"
+input_file_metadata <- "20230513-NCLDV_metadata.xlsx"
+
+df <- read.table(paste0(input_path, input_file), header = TRUE)
+metadata <- read_xlsx(paste0(input_path_metadata, input_file_metadata)) %>%
+  select(Label, Label_short)
+
+df2 <- df %>%
+  group_by(qseqid) %>%
+  arrange(desc(bitscore), .by_group = TRUE) %>%
+  filter(row_number() == 1) %>%
+  rename(bin = qseqid) %>%
+  left_join(metadata, by = c("bin" = "Label"))
+
+plot <- ggplot(data = df2)+
+  geom_point(aes(x = reorder(Label_short, pident), y = pident, col = bitscore), size = 3)+
+  scale_y_continuous(limits = c(20,100))+
+  labs(col = "diamond blast\nbitscore",
+       y = "percent identity",
+       x = "bin names")+
+  scale_color_viridis(discrete = FALSE)+
+  theme_classic()+
+  theme(axis.text.x = element_text(angle = 90, hjust = 0.95, vjust = 0.2),
+        axis.title = element_text(size = 18),
+        axis.text = element_text(size = 16),
+        legend.title = element_text(size = 16),
+        legend.text = element_text(size = 16))
+
+if (save) {
+  date = format(Sys.Date(), "%Y%m%d")
+  output_file <- paste0(date, "_Plot_Comparison_Schulz_23.pdf") 
+  ggsave(plot = plot, 
+         filename = paste0(output_path, output_file),
+         device = "pdf",
+         width = 10,
+         height = 10)
+} else {
+  plot
+}
+
+```

@@ -1,0 +1,59 @@
+---
+title: "crispr"
+author: "Theo Krueger"
+date: "2023-04-05"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+```
+
+```{r, echo = TRUE, message = FALSE, warning = FALSE}
+# core packages
+library(tidyverse)
+library(reshape2)
+# more packages
+library(CRISPRclassify)
+library(filesstrings)
+#logical arguments
+`%notin%` <- Negate(`%in%`)
+
+# paths 
+base_path_input <- "~/Google\ Drive/My\ Drive/AG_Worden/BirdBags/YuChens_pipeline/v2/crispr/"
+folder_input <- "repeats"
+folder_output <- "classification"
+version <- ""
+
+if (version != ""){
+  path_input <- paste0(base_path_input, version, "/", folder_input, "/")
+  path_output <- paste0(base_path_input, version, "/", folder_output, "/")
+} else {
+  path_input <- paste0(base_path_input, folder_input, "/")
+  path_input <- paste0(base_path_input, folder_output, "/")
+}
+if (dir.exists(path_output) == FALSE){
+  dir.create(path_output)
+}
+# mode
+save <- FALSE
+```
+
+```{r}
+file_list <- list.files(path = path_input)
+
+for (file in file_list) {
+  tryCatch({
+    print(file)
+    classifyRepeats(paste0(path_input, file))
+    }, error=function(cond){cat("ERROR :", conditionMessage(cond), "\n")})
+}
+
+output_files <- list.files(path = path_input, pattern = ".crclass")
+for (file in output_files) {
+  file.move(paste0(path_input, file), path_output)
+}
+```
+
+

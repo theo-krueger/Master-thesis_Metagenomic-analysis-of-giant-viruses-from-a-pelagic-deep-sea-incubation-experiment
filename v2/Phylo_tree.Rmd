@@ -1,0 +1,189 @@
+---
+title: "Phylogenetic_tree_ESOM"
+author: "Theo Krueger"
+date: "2023-05-14"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+library(tidyverse)
+library(ggtree)
+library(treeio)
+library(ape)
+library(tidytree)
+library(ggnewscale)
+
+save <- FALSE
+```
+
+```{r}
+metadata <- readxl::read_xlsx("~/Google Drive/My Drive/AG_Worden/BirdBags/YuChens_pipeline/v2_ESOM/Phylogeny/20230513-NCLDV_metadata.xlsx") %>%
+  mutate(Label = gsub(pattern = "@", replacement = "-", Label),
+         Label = gsub(pattern = "-", replacement = "_", Label))
+
+tree_base <- read.iqtree("/Users/tkrueger/Library/CloudStorage/GoogleDrive-theokrueger.marbio@gmail.com/My Drive/AG_Worden/BirdBags/YuChens_pipeline/v2_ESOM/Phylogeny/tree08_refined/polB_own_unique_Needham2019_additional_aligned_trimmed.fa.treefile")
+
+tree_base@phylo$tip.label <- gsub("-", "_", tree_base@phylo$tip.label)
+tree_base@data$UFboot_cat <- case_when(tree_base@data$UFboot == 100 ~ "100",
+                                   tree_base@data$UFboot > 90 ~ ">90",
+                                   tree_base@data$UFboot > 80 ~ ">80")
+# tree2@phylo$edge.length <- tree@phylo$edge.length * 0.5
+
+
+```
+
+```{r first look, fig.height=10, fig.width=10}
+ggtree(tr = tree_base)+
+  geom_nodelab(aes(label = node))+
+  geom_tiplab()
+
+```
+
+```{r , fig.height=80, fig.width=75}
+tree2 <- tree_base %>% root(node = 116)
+
+strip_fontsize <- 26
+strip_align_family <- TRUE
+strip_textoffset <- 0.055
+strip_offset <- 0.83
+strip_angle <- 90
+strip_linesize <- 2
+strip_hjust <- 0.5
+
+legend_titlesize <- 80
+legend_textsize <- 60
+
+tiplabel_fontsize <- 24
+tiplabel_bold <- data.frame(tree2@phylo$tip.label) %>%
+  rename(full_name = tree2.phylo.tip.label) %>%
+  mutate(bold_tips = case_when(grepl("BB", full_name) ~ "bold",
+                          TRUE ~ "plain")) %>%
+  pull(bold_tips)
+
+
+tree_plot <- ggtree(tr = tree2, size = 2) %>%
+  ggtree::rotate(119) %>%
+  ggtree::rotate(142) %<+%
+  
+  metadata+
+  
+  coord_cartesian(clip = 'off')+
+  xlim(0,5)+
+  
+  #geom_nodelab(aes(label = node), size = 20)+
+  
+  geom_nodepoint(aes(fill=UFboot_cat),
+                 size = 12, shape = 21)+
+  scale_fill_manual(values = c("100" = "black", ">90" = "darkgrey", ">80" = "white", NA),
+                    guide = guide_legend(title = "Bootstrap",
+                                         title.theme = element_text(size = legend_titlesize),
+                                         label.theme = element_text(size = legend_textsize)))+
+  
+  new_scale_color()+
+  geom_tiplab(aes(label = Label_short, 
+                  color = factor(Env_mod)), 
+              size = tiplabel_fontsize)+
+  scale_color_manual("Env_mod",
+                     values = c("Marine pelagic" = "#817891",
+                                "Other aquatic" = "#9ABCA7",
+                                "Metazoan" = "#922D50", 
+                                "Marine sediments" = "#e09f3e", 
+                                "Terrestrial soil" = "#48090B",
+                                "Marine deep sea water" = "#284952"),
+                     guide = guide_legend(title = "Environment",
+                                          title.theme = element_text(size = legend_titlesize),
+                                          label.theme = element_text(size = legend_textsize)))+
+
+  # new_scale_color()+
+  # geom_tippoint(aes(color = fam, shape = fam), 
+  #               size = 12)+
+  # scale_color_manual("fam", 
+  #                    values = c("BB" = "red", "NCLDV" = NA), 
+  #                    breaks = c(), 
+  #                    guide = "none")+
+  #   scale_shape_manual("fam", 
+  #                    values = c("BB" = 16, "NCLDV" = NA), 
+  #                    breaks = c())+
+
+  geom_strip("Faustovirus_E12_KJ614390.1_301", "African_swine_fever_virus_strain_BA71V_NP_042783_1",
+             label = "",
+             align = strip_align_family,
+             offset.text = strip_textoffset,
+             fontsize = strip_fontsize,
+             angle = strip_angle,
+             offset = strip_offset,
+             barsize = strip_linesize,
+             hjust = strip_hjust)+
+  geom_strip("Heliothis_virescens_ascovirus_3e_YP_001110854_1", "Trichoplusia_ni_ascovirus_2c_YP_803224_1",
+             label = "",
+             align = strip_align_family,
+             offset.text = strip_textoffset,
+             fontsize = strip_fontsize,
+             angle = strip_angle,
+             offset = strip_offset,
+             barsize = strip_linesize,
+             hjust = strip_hjust)+
+  geom_strip("Tunisvirus_fontaine2_AHC54969_1", "Marseillevirus_marseillevirus_strain_T19_polB",
+             label = "",
+             align = strip_align_family,
+             offset.text = strip_textoffset,
+             fontsize = strip_fontsize,
+             angle = strip_angle,
+             offset = strip_offset,
+             barsize = strip_linesize,
+             hjust = strip_hjust)+
+  geom_strip("Infectious_spleen_and_kidney_necrosis_virus_NP_612241_1", "Invertebrate_iridescent_virus_6_NP_149500_1",
+             label = "",
+             align = strip_align_family,
+             offset.text = strip_textoffset + 0.065,
+             fontsize = strip_fontsize,
+             angle = strip_angle,
+             offset = strip_offset,
+             barsize = strip_linesize,
+             hjust = strip_hjust)+
+  geom_strip("Feldmannia_species_virus_YP_002154715_1", "Heterosigma_akashiwo_virus_01_isolate_HaV53_AOM63508_1",
+             label = "",
+             align = strip_align_family,
+             offset.text = strip_textoffset,
+             fontsize = strip_fontsize,
+             angle = strip_angle,
+             offset = strip_offset,
+             barsize = strip_linesize,
+             hjust = strip_hjust)+
+  geom_strip("Hyperionvirus_sp_MK072402.1_4", "Aureococcus_anophagefferens_virus_isolate_BtV_01_YP_009052217_1",
+             label = "",
+             align = strip_align_family,
+             offset.text = strip_textoffset,
+             fontsize = strip_fontsize,
+             angle = strip_angle,
+             offset = strip_offset,
+             barsize = strip_linesize,
+             hjust = strip_hjust)+
+
+  geom_treescale(x = 1,
+                 linesize = 3,
+                 fontsize = 20) +
+  
+  theme_tree()+
+  theme(legend.key.size = unit(200, 'points'),
+        legend.position = c(1.2, 0.5),
+        legend.box = "horizontal",
+        plot.margin = unit(c(5.5,25,5.5,5.5), "points"))
+
+if (save){
+  output_path_plot <- "~/Google Drive/My Drive/AG_Worden/BirdBags/YuChens_pipeline/v2_ESOM/Phylogeny/tree08_refined/polB_own_unique_Needham2019_additional_aligned_trimmed"
+  pdf(paste0(output_path_plot, ".pdf"), height = 80, width = 75)
+    print(tree_plot)
+  dev.off()
+  png(paste0(output_path_plot, ".png"), height = 80, width = 75)
+    print(tree_plot)
+  dev.off()
+} else {
+  tree_plot
+}
+```
+

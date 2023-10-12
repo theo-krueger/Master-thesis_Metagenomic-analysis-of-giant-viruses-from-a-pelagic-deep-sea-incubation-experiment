@@ -1,0 +1,127 @@
+---
+title: "Pathway_plots_new"
+author: "Theo Krueger"
+date: "2023-09-08"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r packages and paths}
+options(warn = -1)
+
+suppressPackageStartupMessages(library(tidyverse))
+suppressPackageStartupMessages(library(ggh4x))
+
+
+# date 
+date = format(Sys.Date(), "%Y%m%d")
+
+# paths 
+path_input <- "/Users/tkrueger/Google\ Drive/My\ Drive/AG_Worden/BirdBags/YuChens_pipeline/v2_ESOM/anvio_pathways/pathways_ESOM_selected_increasing.txt"
+path_output <- NULL
+  
+
+if (is.null(path_output)) {
+  path_output_figures <- dirname(path_input)
+} else {
+  path_output_figures <- path_output
+}
+
+
+#path_input <- "/Users/tkrueger/Library/CloudStorage/GoogleDrive-theokrueger.marbio@gmail.com/My Drive/AG_Worden/BirdBags/Fabians_pipeline/Annotations/Pathways/pathways_all.txt"
+#path_output_figures <- "/Users/tkrueger/Library/CloudStorage/GoogleDrive-theokrueger.marbio@gmail.com/My Drive/AG_Worden/BirdBags/Fabians_pipeline/Annotations/Pathways/figures/"
+
+```
+
+```{r data}
+df_pathways <- read.table(path_input, sep = "\t", header = TRUE) %>%
+  complete(genome_name, module_name) %>%
+  mutate(module_subcategory = gsub(pattern = " metabolism", replacement = "", x = module_subcategory),
+         genome_name = case_when(genome_name == "BB_2016_1040m_12C_4m_19_L002_ESOM_4_1_contigs" ~ "BB_4_1",
+                                 genome_name == "BB_2016_1040m_12C_4m_19_L002_ESOM_4_2_contigs" ~ "BB_4_2",
+                                 genome_name == "BB_2016_1040m_12C_4m_19_L002_ESOM_4_3_contigs" ~ "BB_4_3",
+                                 genome_name == "BB_2016_1040m_12C_4m_20_L002_ESOM_11_1_contigs" ~ "BB_11_1",
+                                 genome_name == "BB_2016_1040m_12C_4m_20_L002_ESOM_11_2_contigs" ~ "BB_11_2"
+                                 ),
+         genome_name = factor(genome_name, levels = c("BB_4_1", "BB_4_2", "BB_4_3", "BB_11_1", "BB_11_2")),
+         
+         module_completeness = round(module_completeness * 100)
+         ) 
+
+```
+
+```{r}
+plot <- ggplot(data = na.omit(df_pathways)) +
+  geom_tile(aes(x = genome_name, 
+                y = module_name, 
+                fill = module_completeness,
+                group = module_subcategory
+                ),
+            size = 5,
+            height = 1 
+            ) +
+  scale_y_discrete(labels = label_wrap_gen(width = 30),
+                   expand = c(0,0)
+                   )+
+  scale_fill_gradient(limits = c(0,100),
+                      low = "white",
+                      high = "#922d50",
+                      na.value = "white"
+                      )+
+  
+  geom_point(aes(x = ifelse(module_is_complete== "True", genome_name, NA), 
+                 y = ifelse(module_is_complete== "True", module_name, NA),
+                 color = "complete"),
+             size = 3) +
+  scale_color_manual(values = c("complete"="black"))+
+  
+  guides(fill = guide_legend(reverse = TRUE))+
+  
+  facet_nested(module_category + module_subcategory ~.,
+               scales = "free",
+               space = "free",
+               switch = "y",
+               labeller = label_wrap_gen(width = 12)) +
+  
+  labs(fill = "Completeness (%)",
+       color = "",
+       x = "", 
+       y = "")+
+  
+  theme_minimal()+
+  theme(axis.title.x = element_blank(),
+        axis.text.x = element_text(size = 12, angle = 90, hjust = 0),
+        
+        axis.title.y = element_text(size = 9),
+        axis.text.y = element_text(size = 12, angle = 0),
+        
+        strip.text = element_text(margin = margin(2, 0.25, 2, 0.25, "cm"),
+                                  size = 12),
+        strip.placement = "outside",
+        strip.background = element_blank(),
+        strip.text.y.left = element_text(angle = 0),
+        
+        legend.title = element_text(size = 12),
+        legend.text = element_text(size = 12),
+        
+        panel.border = element_rect(colour = "black", fill = NA, linewidth = 1),
+        panel.grid.major = element_blank(),
+        panel.spacing = unit(0, "pt")
+        )
+```
+
+```{r , fig.height=20, fig.width=10}
+save <- FALSE
+if (save) {
+  ggsave(plot, 
+         filename = paste0(path_output_figures, "/", date, "_pathway_completion_heatmap.pdf"), 
+         height = 20, 
+         width = 10, 
+         dpi = 300)
+} else {
+  plot
+}
+```
+
